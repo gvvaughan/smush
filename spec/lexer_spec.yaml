@@ -1,0 +1,194 @@
+# Smush the source, Luke!
+# Copyright (C) 2014-2026 Gary V. Vaughan
+
+before: |
+  this_module = 'smush.lexer'
+
+  lexer = require(this_module)
+  Lexer = lexer.prototype
+  Scanner = require 'std.prototype.scanner'.prototype
+
+  function objtype(o)
+     return (getmetatable(o) or {})._type
+  end
+
+  -- What *text* is, as kind:text@line for each of its tokens.
+  function lex(text, name)
+     local r = {}
+     for i, token in ipairs(Lexer(text, name):tokens()) do
+        r[i] = token[1] .. ':' .. token[2]:gsub('\n', '\\n'):gsub('\t', '\\t') .. '@' .. token[3]
+     end
+     return table.concat(r, ' ')
+  end
+
+specify smush.lexer:
+- describe construction:
+  - it is a scanner of the source: |
+      l = Lexer('x = 1', 'x.lua')
+      expect(objtype(l)).to_be 'LuaLexer'
+      expect(l.name).to_be 'x.lua'
+      expect(l:peek()).to_be 'x'
+  - it can use all the methods of a scanner, as a type derived from one: |
+      l = Lexer 'abc def'
+      expect(l:next(3)).to_be 'abc'
+      expect(l:take ' ').to_be ' '
+      expect(l:match '%a+').to_be 'def'
+      expect(l:eof()).to_be(true)
+  - it can be derived from again: |
+      Plain = Lexer {_type = 'PlainLexer'}
+      expect(objtype(Plain 'x = 1')).to_be 'PlainLexer'
+      expect(Plain('x = 1'):token()[2]).to_be 'x'
+  - it can have a copy that goes on from where it is: |
+      l = Lexer 'a b c'
+      l:token()
+      copy = l {}
+      expect(copy:token()[2]).to_be ' '
+      expect(l.pos).to_be(2)
+
+
+- describe tokens:
+  - it has no tokens for no source: |
+      expect(lex '').to_be ''
+  - it reads every character into a token, so that the source is what they say: |
+      source = 'local x = {1, "two", [[three]]} -- four\nreturn x[1] + 2.5 .. [==[x]==]\n'
+      text = {}
+      for _, token in ipairs(Lexer(source):tokens()) do text[#text + 1] = token[2] end
+      expect(table.concat(text)).to_be(source)
+
+
+- describe whitespace:
+  - it is a token of the run of it: |
+      expect(lex ' \t\n  x').to_be 'WHITESPACE: \\t\\n  @1 IDENTIFIER:x@2'
+  - it includes carriage returns, form feeds and vertical tabs: |
+      expect(lex '\r\f\vx').to_be 'WHITESPACE:\r\f\v@1 IDENTIFIER:x@1'
+
+
+- describe identifier:
+  - it is letters, digits and underscores, from a letter or underscore: |
+      expect(lex '_a1 B2_ c').to_be 'IDENTIFIER:_a1@1 WHITESPACE: @1 IDENTIFIER:B2_@1 WHITESPACE: @1 IDENTIFIER:c@1'
+  - it is a keyword too: |
+      expect(lex 'local').to_be 'IDENTIFIER:local@1'
+  - it stops at punctuation: |
+      expect(lex 'a.b:c').to_be 'IDENTIFIER:a@1 PUNCTUATION:.@1 IDENTIFIER:b@1 PUNCTUATION::@1 IDENTIFIER:c@1'
+
+
+- describe number:
+  - it is digits: |
+      expect(lex '42').to_be 'NUMBER:42@1'
+  - it keeps leading zeros: |
+      expect(lex '007').to_be 'NUMBER:007@1'
+  - it has a fraction: |
+      expect(lex '3.14 3. 5.').to_be 'NUMBER:3.14@1 WHITESPACE: @1 NUMBER:3.@1 WHITESPACE: @1 NUMBER:5.@1'
+  - it has an exponent, with a sign or without one: |
+      expect(lex '1e5 2E+3 4e-2').to_be 'NUMBER:1e5@1 WHITESPACE: @1 NUMBER:2E+3@1 WHITESPACE: @1 NUMBER:4e-2@1'
+  - it can be hexadecimal: |
+      expect(lex '0x1F 0XaB').to_be 'NUMBER:0x1F@1 WHITESPACE: @1 NUMBER:0XaB@1'
+  - it can be hexadecimal with a fraction and a binary exponent: |
+      expect(lex '0xA.8p1 0x1p-2 0x.8').to_be 'NUMBER:0xA.8p1@1 WHITESPACE: @1 NUMBER:0x1p-2@1 WHITESPACE: @1 NUMBER:0x.8@1'
+  - it does not take the e of a hexadecimal number for an exponent: |
+      expect(lex '0xe+1').to_be 'NUMBER:0xe@1 PUNCTUATION:+@1 NUMBER:1@1'
+  - it takes the letters that follow, as Lua does, for a malformed number to refuse: |
+      expect(lex '3x').to_be 'NUMBER:3x@1'
+  - it begins with a digit, so a fraction on its own is a point and a number: |
+      expect(lex '.5').to_be 'PUNCTUATION:.@1 NUMBER:5@1'
+  - it stops at an operator: |
+      expect(lex '1+2').to_be 'NUMBER:1@1 PUNCTUATION:+@1 NUMBER:2@1'
+
+
+- describe shortstring:
+  - it is in single or double quotes: |
+      expect(lex [["a" 'b']]).to_be [[STRING:"a"@1 WHITESPACE: @1 STRING:'b'@1]]
+  - it is empty with nothing between the quotes: |
+      expect(lex '""').to_be 'STRING:""@1'
+  - it can have the other quote inside: |
+      expect(lex [["it's" 'say "hi"']]).to_be [[STRING:"it's"@1 WHITESPACE: @1 STRING:'say "hi"'@1]]
+  - it can have an escaped quote: |
+      expect(lex [["a\"b"]]).to_be [[STRING:"a\"b"@1]]
+  - it can have an escaped backslash before the closing quote: |
+      expect(lex [["a\\" b]]).to_be [[STRING:"a\\"@1 WHITESPACE: @1 IDENTIFIER:b@1]]
+  - it can have an escaped line break: |
+      expect(lex '"a\\\nb" c').to_be 'STRING:"a\\\\nb"@1 WHITESPACE: @2 IDENTIFIER:c@2'
+  - it can have an escaped line break of a carriage return and a line feed: |
+      expect(lex '"a\\\r\nb"').to_be 'STRING:"a\\\r\\nb"@1'
+  - it holds comment and bracket characters: |
+      expect(lex [=["-- [[ ]] x"]=]).to_be [=[STRING:"-- [[ ]] x"@1]=]
+  - it raises an error for a line break inside: |
+      expect(lex('"abc\ndef"', 'f.lua')).to_raise 'f.lua:1: unfinished string'
+  - it raises an error for the end of the source inside: |
+      expect(lex('x = "abc', 'f.lua')).to_raise 'f.lua:1: unfinished string'
+  - it raises an error for a backslash at the end of the source: |
+      expect(lex('x = "abc\\', 'f.lua')).to_raise 'f.lua:1: unfinished string'
+  - it says the line that the string started on: |
+      expect(lex('\n\n"abc', 'f.lua')).to_raise 'f.lua:3: unfinished string'
+
+
+- describe longstring:
+  - it is in double brackets: |
+      expect(lex '[[abc]]').to_be 'STRING:[[abc]]@1'
+  - it can have equals signs in its brackets, to hold shorter ones: |
+      expect(lex '[==[a]]b]=]c]==]').to_be 'STRING:[==[a]]b]=]c]==]@1'
+  - it can be empty: |
+      expect(lex '[[]]').to_be 'STRING:[[]]@1'
+  - it can have line breaks, and the next token knows the line: |
+      expect(lex '[[a\nb\nc]] x').to_be 'STRING:[[a\\nb\\nc]]@1 WHITESPACE: @3 IDENTIFIER:x@3'
+  - it holds quotes and comment markers: |
+      expect(lex [=[[[ "a" -- b ]]]=]).to_be [=[STRING:[[ "a" -- b ]]@1]=]
+  - it is a bracket on its own where it is not a long string: |
+      expect(lex 'a[1]').to_be 'IDENTIFIER:a@1 PUNCTUATION:[@1 NUMBER:1@1 PUNCTUATION:]@1'
+  - it is a bracket, then an equals sign, where it is not a long string: |
+      expect(lex '[=x').to_be 'PUNCTUATION:[@1 PUNCTUATION:=@1 IDENTIFIER:x@1'
+  - it raises an error for the end of the source inside: |
+      expect(lex('\nx = [==[abc]]', 'f.lua')).to_raise 'f.lua:2: unfinished long string'
+
+
+- describe comment:
+  - it goes to the end of the line, and not through it: |
+      expect(lex '-- a\nb').to_be 'COMMENT:-- a@1 WHITESPACE:\\n@1 IDENTIFIER:b@2'
+  - it can end the source: |
+      expect(lex 'x -- the rest').to_be 'IDENTIFIER:x@1 WHITESPACE: @1 COMMENT:-- the rest@1'
+  - it is empty with nothing after the dashes: |
+      expect(lex '--').to_be 'COMMENT:--@1'
+  - it can be in long brackets: |
+      expect(lex '--[[ a\nb ]] x').to_be 'COMMENT:--[[ a\\nb ]]@1 WHITESPACE: @2 IDENTIFIER:x@2'
+  - it can be in long brackets with equals signs: |
+      expect(lex '--[==[ a ]] b ]==] x').to_be 'COMMENT:--[==[ a ]] b ]==]@1 WHITESPACE: @1 IDENTIFIER:x@1'
+  - it is a line comment where the brackets are not long ones: |
+      expect(lex '--[ a ]\nb').to_be 'COMMENT:--[ a ]@1 WHITESPACE:\\n@1 IDENTIFIER:b@2'
+      expect(lex '--[=x]\n').to_be 'COMMENT:--[=x]@1 WHITESPACE:\\n@1'
+  - it is a line comment, however long, when the brackets are only for a block that is not closed on the line after: |
+      expect(lex '---[[ x\ny').to_be 'COMMENT:---[[ x@1 WHITESPACE:\\n@1 IDENTIFIER:y@2'
+  - it is a minus where there is only one: |
+      expect(lex 'a - b').to_be 'IDENTIFIER:a@1 WHITESPACE: @1 PUNCTUATION:-@1 WHITESPACE: @1 IDENTIFIER:b@1'
+  - it is two minuses, apart, which are not a comment: |
+      expect(lex 'a - -b').to_be 'IDENTIFIER:a@1 WHITESPACE: @1 PUNCTUATION:-@1 WHITESPACE: @1 PUNCTUATION:-@1 IDENTIFIER:b@1'
+  - it raises an error for the end of the source inside: |
+      expect(lex('x\n--[[ never closed', 'f.lua')).to_raise 'f.lua:2: unfinished long comment'
+
+
+- describe punctuation:
+  - it is a token for each character: |
+      expect(lex '==').to_be 'PUNCTUATION:=@1 PUNCTUATION:=@1'
+  - it is every other character: |
+      expect(lex '(){};,~#').to_be 'PUNCTUATION:(@1 PUNCTUATION:)@1 PUNCTUATION:{@1 PUNCTUATION:}@1 PUNCTUATION:;@1 PUNCTUATION:,@1 PUNCTUATION:~@1 PUNCTUATION:#@1'
+  - it is a bracket that does not start a long string: |
+      expect(lex ']').to_be 'PUNCTUATION:]@1'
+
+
+- describe line:
+  - it numbers the lines from 1: |
+      expect(lex 'a\nb\n\nc').to_be 'IDENTIFIER:a@1 WHITESPACE:\\n@1 IDENTIFIER:b@2 WHITESPACE:\\n\\n@2 IDENTIFIER:c@4'
+  - it counts the line breaks inside a string and a comment: |
+      expect(lex '--[[\n]] "a\\\nb" c').to_be 'COMMENT:--[[\\n]]@1 WHITESPACE: @2 STRING:"a\\\\nb"@2 WHITESPACE: @3 IDENTIFIER:c@3'
+
+
+- describe token:
+  - it reads one token, and then the next: |
+      l = Lexer 'a b'
+      expect(l:token()[2]).to_be 'a'
+      expect(l:token()[2]).to_be ' '
+      expect(l:token()[2]).to_be 'b'
+  - it is nil at the end of the source: |
+      l = Lexer 'a'
+      l:token()
+      expect(l:token()).to_be(nil)
+      expect(Lexer(''):token()).to_be(nil)
