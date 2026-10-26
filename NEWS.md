@@ -19,10 +19,11 @@
     leave any behind.  `--main` or `--module` is now needed, where luke
     assumed that the main function was luke's.
 
-  - smush bundles itself, which it needs as a program that needs nothing
-    installed: `smush --main=smush smush smush.lexer ...` and the
-    modules of std.normalize, std.functional and std.prototype that it
-    uses, writes the same file that it is.
+  - The `smush` command that LuaRocks installs is smush bundled with
+    the modules of std.normalize, std.functional and std.prototype that
+    it uses, in one file that needs nothing else installed, which
+    LuaRocks builds with luke from the rockspec.  They are needed only to
+    build it.
 
 ### Bug fixes
 

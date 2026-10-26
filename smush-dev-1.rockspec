@@ -19,24 +19,66 @@ description = {
    license = 'MIT',
 }
 
--- The std.functional, std.normalize and std.prototype releases that have
--- what smush uses (a sorted `keys`, `string.format` in Lua 5.1, and the
--- `scanner` and `contextmanager` modules) raise these.
 dependencies = {
    'lua >= 5.1, < 5.6',
+}
+
+-- Smush is one file with these bundled in, so installing it needs them only
+-- to build it.  The releases of std.functional, std.normalize and
+-- std.prototype that have what smush uses (a sorted `keys`, `string.format`
+-- in Lua 5.1, and the `scanner` and `contextmanager` modules) raise these.
+build_dependencies = {
+   'luarocks-build-luke >= 0.2',
    'std.functional >= 2',
    'std.normalize >= 4',
    'std.prototype >= 2',
 }
 
+source = {
+   url = 'https://github.com/gvvaughan/smush/archive/v' .. _MODREV .. '.zip',
+   dir = 'smush-' .. _MODREV,
+}
+
+if _MODREV == 'dev' then
+   source = {
+      url = 'git+https://github.com/gvvaughan/smush.git',
+   }
+end
+
+-- The rock installs only build-aux/smush, the single file, as the `smush`
+-- command: smush bundles itself from this source tree, with the modules of
+-- std.normalize, std.functional and std.prototype that it uses, which it
+-- finds on the Lua path.
+local bundled = {
+   'lib/smush/init.lua',
+   'lib/smush/lexer.lua',
+   'std.functional._base',
+   'std.functional.init',
+   'std.normalize',
+   'std.normalize._core',
+   'std.prototype._base',
+   'std.prototype.container',
+   'std.prototype.contextmanager',
+   'std.prototype.object',
+   'std.prototype.scanner',
+   'std.prototype.set',
+}
+
 build = {
-   type = 'builtin',
-   modules = {
-      smush = 'lib/smush/init.lua',
-      ['smush.lexer'] = 'lib/smush/lexer.lua',
+   type = 'luke',
+
+   bin = {
+      {['build-aux/smush'] = {
+         -- smush finds the std modules on LUA_PATH, as `luarocks path` sets
+         -- it, or else on the default path.
+         command = 'LUA_PATH="$abs_top_srcdir/lib/?.lua;$abs_top_srcdir/lib/?/init.lua;$LUA_PATH;;"' ..
+                   ' $LUA bin/smush --main=smush $sources > $target',
+         sources = bundled,
+      }},
    },
+
    install = {
-      bin = {smush = 'bin/smush'},
+      bin = {smush = 'build-aux/smush'},
    },
 }
 
@@ -49,8 +91,4 @@ test_dependencies = {
 test = {
    type = 'command',
    command = 'specl -vfreport --coverage spec/*_spec.yaml',
-}
-
-source = {
-   url = 'git+https://github.com/gvvaughan/smush.git',
 }

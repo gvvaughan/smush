@@ -33,15 +33,6 @@ bundled as NAME, or the name of a module that is in the Lua path.
     bundle, which is how a bundle reaches a module that cannot be
     bundled, such as one written in C.
 
-For example, `smush` is bundled with the modules that it uses, so that it
-needs nothing else to be installed:
-
-    smush --main=smush smush smush.lexer \
-        std.prototype.contextmanager std.prototype.scanner \
-        std.prototype.set std.prototype.object std.prototype.container \
-        std.prototype._base std.functional.init std.functional._base \
-        std.normalize std.normalize._core > smush-bundle
-
 Smush warns of a module in the Lua path that a bundled module names but
 that is not bundled, unless it is external or is only asked for with
 `pcall(require, 'name')`.
@@ -70,7 +61,10 @@ A module that has a C part can be bundled for its Lua part, with
 
     luarocks install smush
 
-Smush needs [std.normalize][], [std.functional][] and [std.prototype][].
+The `smush` command is one file, which has the modules of
+[std.normalize][], [std.functional][] and [std.prototype][] that it uses
+bundled in, so they are needed to build it, and nothing but Lua is needed
+to run it.  LuaRocks builds it with [Luke][], from the rockspec.
 
 
 ## Development
@@ -78,6 +72,7 @@ Smush needs [std.normalize][], [std.functional][] and [std.prototype][].
     specl spec/*_spec.yaml
 
  [lua]:            https://www.lua.org
+ [luke]:           https://github.com/gvvaughan/luke
  [luajit]:         https://luajit.org
  [mit]:            https://mit-license.org
  [smush]:          https://github.com/gvvaughan/smush
