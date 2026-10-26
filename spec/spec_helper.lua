@@ -1,6 +1,6 @@
 --[[
  Smush the source, Luke!
- Copyright (C) 2014-2026 Gary V. Vaughan
+ Copyright (C) 2026 Gary V. Vaughan
 ]]
 
 -- Load modules from this source tree, ahead of any installed copies.

@@ -1,3 +1,8 @@
+<!--
+ Smush the source, Luke!
+ Copyright (C) 2026 Gary V. Vaughan
+-->
+
 # Smush NEWS - User visible changes
 
 ## Noteworthy changes in release ?.? (????-??-??) [?]

@@ -1,3 +1,8 @@
+<!--
+ Smush the source, Luke!
+ Copyright (C) 2026 Gary V. Vaughan
+-->
+
 # Smush the source, Luke!
 
 [Smush][] bundles Lua modules into a single file, with their comments

@@ -1,6 +1,6 @@
 --[[
  Smush the source, Luke!
- Copyright (C) 2014-2026 Gary V. Vaughan
+ Copyright (C) 2017-2026 Gary V. Vaughan
 ]]
 --[[--
  Bundle Lua modules into a single file.

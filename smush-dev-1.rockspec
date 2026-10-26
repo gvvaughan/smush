@@ -1,3 +1,6 @@
+-- Smush the source, Luke!
+-- Copyright (C) 2026 Gary V. Vaughan
+
 local _MODREV, _SPECREV = 'dev', '-1'
 
 rockspec_format = '3.0'
