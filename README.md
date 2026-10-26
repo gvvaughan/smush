@@ -5,6 +5,10 @@
 
 # Smush the source, Luke!
 
+[![License](http://img.shields.io/:license-mit-blue.svg)](http://mit-license.org)
+[![workflow status](https://github.com/gvvaughan/smush/actions/workflows/spec.yml/badge.svg?branch=master)](https://github.com/gvvaughan/smush/actions)
+[![codecov.io](https://codecov.io/gh/gvvaughan/smush/graph/badge.svg?branch=master)](https://codecov.io/gh/gvvaughan/smush?branch=master)
+
 [Smush][] bundles Lua modules into a single file, with their comments
 and white space squeezed out, to run as a program or to load as a
 module, for [LuaJIT][] and [Lua][] 5.1, 5.2, 5.3, 5.4 and 5.5.

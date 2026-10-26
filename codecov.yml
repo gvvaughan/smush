@@ -1,0 +1,13 @@
+# Smush the source, Luke!
+# Copyright (C) 2026 Gary V. Vaughan
+
+# Report coverage changes on commits and pull requests, without failing
+# them.
+coverage:
+  status:
+    project:
+      default:
+        informational: true
+    patch:
+      default:
+        informational: true
