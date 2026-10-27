@@ -41,6 +41,21 @@
     it bundles, so that code in a bundle that loads a bundled module in an
     environment of its own, as a test runner does, can find its loader.
 
+### Incompatible changes
+
+  - smush exits for an option that it does not know, where it took it
+    for a module to bundle.
+
+  - The `package.preload` and `package.loaded` of a bundle are not empty:
+    they have the loaders of the modules that it bundles, and the
+    standard libraries, `_G` and `package` that it has of its own.
+
+  - A module that `--external=NAME` names is asked of the host's own
+    `require` the first time that the bundle needs it, and not taken
+    from the host's `package.loaded` when the bundle starts, so a host
+    that cannot load it now fails when the bundle needs it, where the
+    bundle used to find `nil`.
+
 ### Bug fixes
 
   - A bundle can `require` the standard libraries that every supported Lua
