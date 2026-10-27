@@ -188,13 +188,18 @@ local function unbundled(tokens, known)
 end
 
 
+-- The options that take a value, as `--NAME=VALUE` or `--NAME VALUE`.
+local OPTIONS = {main = true, module = true, external = true}
+
+
 local USAGE = [[
 Usage: smush [OPTION]... SOURCE...
 
 Write a single file that bundles each SOURCE, to standard output.  A SOURCE
 is the path of a module, which is bundled under the name that its path makes,
 NAME=PATH, which is bundled as NAME, or the name of a module to find in the
-Lua path, which is bundled under that name.  ALIAS::MODULE makes the module
+Lua path, which is bundled under that name.  An option that takes a value
+is written `--NAME=VALUE` or `--NAME VALUE`.  ALIAS::MODULE makes the module
 ALIAS the bundled MODULE, and not a copy of it, so that libraries which each
 have a copy of one file share the one.
 
@@ -219,8 +224,21 @@ have a copy of one file share the one.
 local function main(args)
    local script, entry, sources, known, externals = true, nil, {}, {}, {}
    local aliases = {}
-   each(args, function(a)
+   local i = 1
+   while i <= len(args) do
+      local a = args[i]
       local k, v = match(a, '^%-%-(%w+)=(.*)$')
+      if k == nil then
+         k = match(a, '^%-%-(%w+)$')
+         if OPTIONS[k] then
+            i = i + 1
+            v = args[i]
+            if v == nil then
+               stderr:write("smush: option '--", k, "' needs a value\n")
+               exit(1)
+            end
+         end
+      end
       if k == 'module' then
          script, entry = false, v
       elseif k == 'main' then
@@ -231,12 +249,16 @@ local function main(args)
       elseif a == '--help' then
          write(USAGE)
          exit(0)
+      elseif sub(a, 1, 1) == '-' then
+         stderr:write("smush: unrecognized option '", a, "'\n", USAGE)
+         exit(1)
       elseif match(a, '^[%w_.%-]+::[%w_.%-]+$') then
          aliases[#aliases + 1] = {match(a, '^(.-)::(.*)$')}
       else
          sources[#sources + 1] = a
       end
-   end)
+      i = i + 1
+   end
 
    if entry == nil then
       stderr:write('smush: give --main=NAME or --module=NAME\n', USAGE)

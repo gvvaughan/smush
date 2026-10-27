@@ -33,6 +33,8 @@ as `typecheck._normalize` and `optparse._normalize`, which are copies of
 `typecheck._normalize::std.normalize._core`, and the bundle has one
 instance of it, and no copy to differ from it.
 
+An option that takes a value is written `--NAME=VALUE` or `--NAME VALUE`.
+
   * `--main=NAME` writes a script that exits with the result of calling
     the `main` function of the bundled module NAME with its arguments.
   * `--module=NAME` writes a module that returns the bundled module NAME.

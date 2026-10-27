@@ -34,6 +34,11 @@
     MODULE, so that libraries which each have a copy of one file share a
     single bundled copy of it.
 
+  - An option that takes a value is written `--NAME=VALUE` or
+    `--NAME VALUE`, and smush exits for an option that it does not know,
+    where it took it for a module to bundle and said that it could not
+    find the module.
+
 ### Bug fixes
 
   - Two minuses are not written next to each other, which were a

@@ -123,6 +123,23 @@ specify smush:
   - it does not warn of the module that an alias is for: |
       p = smush(tmpdir, '--module=four', 'three::two', 'four', 'two')
       expect(p.errout).not_to_contain "names the module"
+  - it takes the value of an option as a separate word: |
+      p = smush(tmpdir, '--module', 'one', 'one', 'two')
+      expect(load(p.output)().name).to_be 'one'
+      p = smush(tmpdir, '--main', 'one', 'one', 'two')
+      expect(p.output).to_contain "os.exit(require'one'.main(arg))"
+      p = smush(tmpdir, '--module', 'five', '--external', 'three', 'five')
+      expect(p.output).to_contain 'bundled["three"]'
+  - it exits for an option that it does not know: |
+      p = smush(tmpdir, '--module=one', '--bogus', 'one', 'two')
+      expect(p).to_fail_while_containing "smush: unrecognized option '--bogus'"
+      p = smush(tmpdir, '--module=one', '--bogus=1', 'one', 'two')
+      expect(p).to_fail_while_containing "smush: unrecognized option '--bogus=1'"
+      p = smush(tmpdir, '--module=one', '-x', 'one', 'two')
+      expect(p).to_fail_while_containing "smush: unrecognized option '-x'"
+  - it exits for an option that has no value: |
+      p = smush(tmpdir, 'one', '--module')
+      expect(p).to_fail_while_containing "smush: option '--module' needs a value"
   - it exits for a module that is not in the Lua path: |
       p = smush(tmpdir, '--module=one', 'one', 'missing')
       expect(p).to_fail_while_matching 'module missing not found'
