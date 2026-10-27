@@ -140,6 +140,32 @@ specify smush:
   - it exits for an option that has no value: |
       p = smush(tmpdir, 'one', '--module')
       expect(p).to_fail_while_containing "smush: option '--module' needs a value"
+  - it finds the standard libraries, as the host does: |
+      spit(tmpdir .. '/std.lua', "return {string = require 'string', table = require 'table', io = require 'io'}\n")
+      p = smush(tmpdir, '--module=std', 'std')
+      r = load(p.output)()
+      expect(r.string).to_be(string)
+      expect(r.table).to_be(table)
+      expect(r.io).to_be(io)
+  - it leaves a library that only some Luas have to --external: |
+      spit(tmpdir .. '/some.lua', "return {pcall(require, 'utf8')}\n")
+      package.loaded.utf8 = 'the host utf8'
+      p = smush(tmpdir, '--module=some', 'some')
+      expect(load(p.output)()[1]).to_be(false)
+      p = smush(tmpdir, '--module=some', '--external=utf8', 'some')
+      expect(load(p.output)()).to_equal {true, 'the host utf8'}
+  - it has its own global environment and package: |
+      spit(tmpdir .. '/own.lua', "return {_G = require '_G', package = require 'package'}\n")
+      p = smush(tmpdir, '--module=own', 'own')
+      r = load(p.output)()
+      expect(r._G).not_to_be(_G)
+      expect(r._G.package).to_be(r.package)
+      expect(r.package).not_to_be(package)
+  - it leaves a standard library to the host that is to provide it: |
+      spit(tmpdir .. '/std.lua', "return require 'string'\n")
+      package.loaded.string = 'the host string'
+      p = smush(tmpdir, '--module=std', '--external=string', 'std')
+      expect(load(p.output)()).to_be 'the host string'
   - it exits for a module that is not in the Lua path: |
       p = smush(tmpdir, '--module=one', 'one', 'missing')
       expect(p).to_fail_while_matching 'module missing not found'

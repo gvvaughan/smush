@@ -89,6 +89,15 @@ local function source(arg)
 end
 
 
+-- The libraries that every supported Lua has, Lua 5.1 to 5.5 and LuaJIT, and
+-- `require` finds in `package.loaded`.  A bundle's own `package.loaded` has
+-- them, as the host's does, unless the host is to provide one, with
+-- `--external`.  Any other, such as `utf8`, which is in Lua 5.3 and later,
+-- or `ffi`, which is in LuaJIT, ties the code that needs it to the Lua that
+-- has it, so the bundle names it with `--external`, to say that it does.
+local STANDARD = {'coroutine', 'debug', 'io', 'math', 'os', 'string', 'table'}
+
+
 -- The script or module that smush writes, runs bundled packages in a private
 -- environment of its own with a copy of the globals, `require` and a
 -- `package.loaded` so that nothing leaks into the host's `package` module,
@@ -99,14 +108,22 @@ end
 -- std.normalize and std.functional behave differently with, is not there
 -- for the bundle.
 local function header(script, externals)
+   local provided = {}
+   each(externals, function(name) provided[name] = true end)
+   local function seed(names, value)
+      return concat(map(reject(names, function(name) return provided[name] end), function(name)
+         return format(' loaded.%s=%s', name, value or 'host.loaded.' .. name)
+      end))
+   end
+
    return (script and '#!/usr/bin/env lua\n' or '') .. concat({
       '--[[ minified code follows, see --help text for source location! ]]',
       'local host,hostrequire=package,require',
       'local env={}for k,v in next,_G do env[k]=v end env._G=env',
       'local bundled,loaded={},{}' .. concat(map(externals, function(name)
          return format(' bundled[%q]=function(n)local m=host.loaded[n]if m==nil then m=hostrequire(n)end return m end', name)
-      end)),
-      'env.package=setmetatable({preload={},loaded=loaded},{__index=host})',
+      end)) .. seed(STANDARD) .. seed({'_G'}, 'env'),
+      'env.package=setmetatable({preload={},loaded=loaded},{__index=host})' .. seed({'package'}, 'env.package'),
       'local require=function(modname)local m=loaded[modname]if m==nil then',
       'if bundled[modname]==nil then',
       [=[error("module '" .. modname .. "' not found:\n   no bundled module '" .. modname .. "'",2)]=],

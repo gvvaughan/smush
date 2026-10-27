@@ -1,8 +1,3 @@
-<!--
- Smush the source, Luke!
- Copyright (C) 2026 Gary V. Vaughan
--->
-
 # Smush NEWS - User visible changes
 
 ## Noteworthy changes in release ?.? (????-??-??) [?]
@@ -40,6 +35,15 @@
     find the module.
 
 ### Bug fixes
+
+  - A bundle can `require` the standard libraries that every supported Lua
+    has, as in any Lua: its `package.loaded` has `coroutine`, `debug`, `io`,
+    `math`, `os`, `string` and `table`, and its own `_G` and `package`.
+    `require 'string'` previously failed `no bundled module 'string'`.
+    A library that only some Luas have, such as `utf8` or `ffi`, is not
+    there unless the bundle is built with `--external=utf8`, or whichever
+    it needs, to say that the code that needs it is tied to a Lua that
+    has it.
 
   - smush now warns when a bundled module requires a module that isn't
     bundled, even if the missing module's name starts with the name of

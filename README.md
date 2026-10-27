@@ -1,8 +1,3 @@
-<!--
- Smush the source, Luke!
- Copyright (C) 2026 Gary V. Vaughan
--->
-
 # Smush the source, Luke!
 
 [![License](http://img.shields.io/:license-mit-blue.svg)](http://mit-license.org)
@@ -51,21 +46,24 @@ that is not bundled, unless it is external or is only asked for with
 
 ## The environment of a bundle
 
-The modules of a bundle run in an environment of their own, with copies
-of the globals, and a `require` and `package.loaded` of their own, so:
+The modules of a bundle run in their own environment, with copies of the
+globals, and a custom `require` and `package.loaded`, so:
 
   * a bundled module never finds a module of the same name that the host
-    has loaded, nor does it see the host's `package.path` or
-    `package.loaded`, except for the modules that are `--external`;
+    has loaded, nor does it see the host's `package.loaded`, except for the
+    modules that are `--external`; its `package.loaded` has the standard
+    libraries that every supported Lua has (`coroutine`, `debug`, `io`,
+    `math`, `os`, `string` and `table`), and its own `_G` and `package`, so
+    `require 'string'` works in a bundle, as it does anywhere.  A library
+    that only some Luas have, such as `utf8` or `ffi`, needs `--external`;
   * nothing a bundled module loads is left in the host's `package.loaded`;
-  * a bundled copy of a library does not see, and is not seen by, another
-    copy of it that the host has.  That is what lets a program that is
-    built on libraries, such as a test runner that is built on the
-    libraries that it tests, be one file that has no place in a LuaRocks
-    tree.
+  * a bundled copy of a library is hermetically separated from any other
+    copy of it that the host has installed.  This lets a program such as
+    a test runner use its bundled libraries even while it tests a different
+    version of the same libraries it is calling internally.
 
-A module that has a C part can be bundled for its Lua part, with
-`--external` for the C part.
+A module that has a C part can be partially bundled for only its Lua part,
+with `--external` for the C part.
 
 
 ## Installation
