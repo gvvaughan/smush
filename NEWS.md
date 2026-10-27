@@ -32,6 +32,9 @@
   - `smush --version` show release version string, or for a development
     build bake `$USER/$gitref`.
 
+  - `smush --version` also lists the rocks that are bundled in it, with their
+    versions, when LuaRocks built it with luarocks-build-luke 0.3 or later.
+
   - An option that takes a value is written `--NAME=VALUE` or
     `--NAME VALUE`, and smush exits for an option that it does not know,
     where it took it for a module to bundle and said that it could not

@@ -260,7 +260,11 @@ local function main(args)
          write(USAGE)
          exit(0)
       elseif a == '--version' then
-         write(require 'smush.version'.versiontext)
+         local version = require 'smush.version'
+         write(version.versiontext)
+         if #(version.BUNDLED or {}) > 0 then
+            write('\nBundled rocks:\n  ', concat(version.BUNDLED, '\n  '), '\n')
+         end
          exit(0)
       elseif sub(a, 1, 1) == '-' then
          stderr:write("smush: unrecognized option '", a, "'\n", USAGE)
