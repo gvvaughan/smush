@@ -218,6 +218,7 @@ have a copy of one file share the one.
   --external=NAME  the host provides the module NAME to the bundle, which
                    asks the host's `require` for it when it needs it
   --help           show this help, and exit
+  --version        show the version, and exit
 ]]
 
 
@@ -257,6 +258,9 @@ local function main(args)
          externals[#externals + 1] = v
       elseif a == '--help' then
          write(USAGE)
+         exit(0)
+      elseif a == '--version' then
+         write(require 'smush.version'.versiontext)
          exit(0)
       elseif sub(a, 1, 1) == '-' then
          stderr:write("smush: unrecognized option '", a, "'\n", USAGE)

@@ -194,6 +194,9 @@ specify smush:
   - it says how to use it: |
       p = smush(tmpdir, '--help')
       expect(p).to_succeed_while_containing 'Usage: smush'
+  - it says which version it is: |
+      p = smush(tmpdir, '--version')
+      expect(p).to_succeed_while_matching '^smush %(Smush%) [^\n]+\n'
   - it exits for a file that it cannot read: |
       p = smush(tmpdir, '--module=x', tmpdir .. '/nonesuch.lua')
       expect(p).to_fail_while_matching 'No such file'

@@ -52,6 +52,7 @@ end
 local bundled = {
    'lib/smush/init.lua',
    'lib/smush/lexer.lua',
+   'lib/smush/version.lua.in',
    'std.functional._base',
    'std.functional.init',
    'std.normalize',
@@ -81,6 +82,11 @@ build = {
       bin = {smush = 'build-aux/smush'},
    },
 }
+
+if _MODREV == 'dev' then
+   -- Stamp a development build with who made it, and from which commit.
+   build.version = '$USER/$gitref'
+end
 
 test_dependencies = {
    'ansicolors',
