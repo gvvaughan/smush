@@ -78,6 +78,51 @@ specify smush:
       expect(load(p.output)()[1]).to_be(false)
       p = smush(tmpdir, '--module=five', '--external=three', 'five')
       expect(load(p.output)()).to_equal {true, 'the host three'}
+  - it asks the host for an external module that it has not loaded yet: |
+      spit(tmpdir .. '/needs.lua', "return {pcall(require, 'hostmod')}\n")
+      os.execute('mkdir ' .. tmpdir .. '/host')
+      spit(tmpdir .. '/host/hostmod.lua', "return 'the host hostmod'\n")
+      package.path = tmpdir .. '/host/?.lua;' .. package.path
+      p = smush(tmpdir, '--module=needs', 'needs')
+      expect(load(p.output)()[1]).to_be(false)
+      p = smush(tmpdir, '--module=needs', '--external=hostmod', 'needs')
+      expect(load(p.output)()).to_equal {true, 'the host hostmod'}
+  - it only asks the host for an external module when the bundle needs it: |
+      os.execute('mkdir ' .. tmpdir .. '/host')
+      spit(tmpdir .. '/host/hostmod.lua', "return 'the host hostmod'\n")
+      package.path = tmpdir .. '/host/?.lua;' .. package.path
+      p = smush(tmpdir, '--module=one', '--external=hostmod', 'one', 'two')
+      expect(load(p.output)().name).to_be 'one'
+      expect(package.loaded.hostmod).to_be(nil)
+  - it raises the error of the host for an external module that it cannot find: |
+      spit(tmpdir .. '/needs.lua', "return require 'nowhere'\n")
+      p = smush(tmpdir, '--module=needs', '--external=nowhere', 'needs')
+      expect(load(p.output)()).to_raise 'nowhere'
+  - it bundles an alias as the module that it is for, not a copy of it: |
+      spit(tmpdir .. '/both.lua', "return {require 'one', require 'copy'}\n")
+      spit(tmpdir .. '/copy.lua', "-- the same program\nreturn {name = 'one', two = require 'two'}\n")
+      p = smush(tmpdir, '--module=both', 'copy::one', 'both', 'one', 'two')
+      expect(p.errout).to_be ''
+      r = load(p.output)()
+      expect(r[1]).to_be(r[2])
+      expect(r[1].name).to_be 'one'
+  - it needs no file for the module that an alias is for: |
+      spit(tmpdir .. '/both.lua', "return {require 'one', require 'nowhere'}\n")
+      p = smush(tmpdir, '--module=both', 'nowhere::one', 'both', 'one', 'two')
+      expect(p.errout).to_be ''
+      r = load(p.output)()
+      expect(r[1]).to_be(r[2])
+  - it exits for an alias of a module that is not bundled: |
+      p = smush(tmpdir, '--module=four', 'three::missing', 'four')
+      expect(p).to_fail_while_matching 'smush: three::missing: missing is not a bundled module'
+  - it exits for an alias of itself or of a module that is bundled: |
+      p = smush(tmpdir, '--module=four', 'three::three', 'four')
+      expect(p).to_fail_while_matching 'smush: three::three: three is not a bundled module'
+      p = smush(tmpdir, '--module=four', 'two::four', 'four', 'two')
+      expect(p).to_fail_while_matching 'smush: two::four: four is not a bundled module'
+  - it does not warn of the module that an alias is for: |
+      p = smush(tmpdir, '--module=four', 'three::two', 'four', 'two')
+      expect(p.errout).not_to_contain "names the module"
   - it exits for a module that is not in the Lua path: |
       p = smush(tmpdir, '--module=one', 'one', 'missing')
       expect(p).to_fail_while_matching 'module missing not found'

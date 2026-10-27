@@ -26,12 +26,21 @@ Each SOURCE is the path of a Lua module, which is bundled as the name
 that its path makes (`lib/foo/init.lua` is `foo`), `NAME=PATH`, which is
 bundled as NAME, or the name of a module that is in the Lua path.
 
+`ALIAS::MODULE` makes the module ALIAS the bundled module MODULE, in place
+of a source of its own.  Libraries that each keep a copy of one file, such
+as `typecheck._normalize` and `optparse._normalize`, which are copies of
+`std.normalize._core`, can then share the one that is bundled, with
+`typecheck._normalize::std.normalize._core`, and the bundle has one
+instance of it, and no copy to differ from it.
+
   * `--main=NAME` writes a script that exits with the result of calling
     the `main` function of the bundled module NAME with its arguments.
   * `--module=NAME` writes a module that returns the bundled module NAME.
   * `--external=NAME` says that the host provides the module NAME to the
     bundle, which is how a bundle reaches a module that cannot be
-    bundled, such as one written in C.
+    bundled, such as one written in C.  The bundle asks the host for it,
+    with the host's own `require`, the first time that it needs it, so
+    the host need not have loaded it already.
 
 Smush warns of a module in the Lua path that a bundled module names but
 that is not bundled, unless it is external or is only asked for with

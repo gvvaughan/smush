@@ -74,9 +74,10 @@ local function modfile(name)
 end
 
 
--- Each argument is a path, which is bundled under the module name that
+-- Each source is a path, which is bundled under the module name that
 -- its path makes, or NAME=PATH, which is bundled as NAME, or else the name
 -- of a module to find in the Lua path, which is bundled under that name.
+-- (ALIAS::MODULE is not one: main sets those aside.)
 local function source(arg)
    local name, fname = match(arg, '^([%w_.%-]+)=(.+)$')
    if name ~= nil then
@@ -92,17 +93,18 @@ end
 -- environment of its own with a copy of the globals, `require` and a
 -- `package.loaded` so that nothing leaks into the host's `package` module,
 -- and nothing leaks out of it, except for the modules that the host is to
--- provide, named by `--external`, which the host has loaded already.  Any
--- other module that the host happens to have loaded, such as typecheck or
--- std.strict, which std.normalize and std.functional behave differently
--- with, is not there for the bundle.
+-- provide, named by `--external`, which the bundle asks the host's own
+-- `require` for, the first time that it needs one.  Any other module that
+-- the host happens to have loaded, such as typecheck or std.strict, which
+-- std.normalize and std.functional behave differently with, is not there
+-- for the bundle.
 local function header(script, externals)
    return (script and '#!/usr/bin/env lua\n' or '') .. concat({
       '--[[ minified code follows, see --help text for source location! ]]',
-      'local host=package',
+      'local host,hostrequire=package,require',
       'local env={}for k,v in next,_G do env[k]=v end env._G=env',
       'local bundled,loaded={},{}' .. concat(map(externals, function(name)
-         return format(' loaded[%q]=host.loaded[%q]', name, name)
+         return format(' bundled[%q]=function(n)local m=host.loaded[n]if m==nil then m=hostrequire(n)end return m end', name)
       end)),
       'env.package=setmetatable({preload={},loaded=loaded},{__index=host})',
       'local require=function(modname)local m=loaded[modname]if m==nil then',
@@ -192,12 +194,15 @@ Usage: smush [OPTION]... SOURCE...
 Write a single file that bundles each SOURCE, to standard output.  A SOURCE
 is the path of a module, which is bundled under the name that its path makes,
 NAME=PATH, which is bundled as NAME, or the name of a module to find in the
-Lua path, which is bundled under that name.
+Lua path, which is bundled under that name.  ALIAS::MODULE makes the module
+ALIAS the bundled MODULE, and not a copy of it, so that libraries which each
+have a copy of one file share the one.
 
   --main=NAME      write a script that exits with the result of calling the
                    `main` function of the bundled module NAME
   --module=NAME    write a module that returns the bundled module NAME
-  --external=NAME  the host provides the module NAME to the bundle
+  --external=NAME  the host provides the module NAME to the bundle, which
+                   asks the host's `require` for it when it needs it
   --help           show this help, and exit
 ]]
 
@@ -209,8 +214,11 @@ Lua path, which is bundled under that name.
 -- the main function of the bundled module NAME returns.
 -- Warn of a module in the Lua path that a bundled module names, but is not
 -- bundled, unless it is an `--external=NAME` that the host is to provide.
+-- A source `ALIAS::MODULE` makes the module ALIAS the bundled MODULE, and
+-- there is no other source for it.
 local function main(args)
    local script, entry, sources, known, externals = true, nil, {}, {}, {}
+   local aliases = {}
    each(args, function(a)
       local k, v = match(a, '^%-%-(%w+)=(.*)$')
       if k == 'module' then
@@ -223,6 +231,8 @@ local function main(args)
       elseif a == '--help' then
          write(USAGE)
          exit(0)
+      elseif match(a, '^[%w_.%-]+::[%w_.%-]+$') then
+         aliases[#aliases + 1] = {match(a, '^(.-)::(.*)$')}
       else
          sources[#sources + 1] = a
       end
@@ -239,6 +249,16 @@ local function main(args)
       known[name], tokens[name] = true, significant(fname)
    end)
 
+   each(aliases, function(alias)
+      local name, target = alias[1], alias[2]
+      if known[name] or not known[target] or name == target then
+         stderr:write('smush: ', name, '::', target, ': ', target, ' is not a bundled module,',
+            ' or ', name, ' is bundled or external already\n')
+         exit(1)
+      end
+      known[name] = true
+   end)
+
    print(header(script, sorted(externals)))
 
    each(sources, function(a)
@@ -250,6 +270,10 @@ local function main(args)
          stderr:write('smush: warning: ', name, " names the module '", missing,
             "', which is in the Lua path, but is not bundled\n")
       end)
+   end)
+
+   each(aliases, function(alias)
+      print("bundled['" .. alias[1] .. "']=function()return require'" .. alias[2] .. "'end")
    end)
 
    print(footer(script, entry))

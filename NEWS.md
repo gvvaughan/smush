@@ -25,6 +25,15 @@
     LuaRocks builds with luke from the rockspec.  They are needed only to
     build it.
 
+  - A module that the host provides, named by `--external=NAME`, such as
+    one written in C that cannot be bundled, is asked of the host's own
+    `require` the first time that the bundle needs it, so the host need
+    not have loaded it already.
+
+  - A source `ALIAS::MODULE` makes the module ALIAS the bundled module
+    MODULE, so that libraries which each have a copy of one file share a
+    single bundled copy of it.
+
 ### Bug fixes
 
   - Two minuses are not written next to each other, which were a
