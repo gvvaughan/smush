@@ -76,10 +76,17 @@ bundled in, so they are needed to build it, and nothing but Lua is needed
 to run it.  LuaRocks builds it with [Luke][], from the rockspec.
 
 
+## Documentation
+
+Luke includes [comprehensive documentation][github.io], which is
+written in [doc/smush.md][manual].
+
+
 ## Development
 
     specl spec/*_spec.yaml
 
+ [github.io]:      https://gvvaughan.github.io/smush
  [lua]:            https://www.lua.org
  [luke]:           https://github.com/gvvaughan/luke
  [luajit]:         https://luajit.org

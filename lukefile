@@ -11,7 +11,8 @@ version  = '$USER/$gitref'
 -- LuaRocks builds smush from the rockspec, which is how `luke release`
 -- builds it too, so what is left is for `luke release`: it adds the release
 -- to NEWS.md, writes the release rockspec, points the README badges at the
--- release branch, and commits the single file that the rock installs.
+-- release branch, commits the single file that the rock installs, and
+-- publishes the manual to gh-pages.
 release = {
    news               = 'NEWS.md',
    rockspec           = 'smush-dev-1.rockspec',
@@ -21,5 +22,11 @@ release = {
       {['README.md']  = {
          {['?branch=master'] = '?branch=release-v@version@'},
       }},
+   },
+   -- The Jekyll site and the `_config.yml.in` that is filled with the
+   -- release number are on the gh-pages branch.
+   ['gh-pages']       = {
+      {['index.md'] = 'doc/smush.md'},
+      '_config.yml.in',
    },
 }
