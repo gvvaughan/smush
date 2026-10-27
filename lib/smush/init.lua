@@ -219,6 +219,7 @@ have a copy of one file share the one.
                    asks the host's `require` for it when it needs it
   --help           show this help, and exit
   --version        show the version, and exit
+  --bundled        list the rocks bundled in smush, and exit
 ]]
 
 
@@ -262,8 +263,11 @@ local function main(args)
       elseif a == '--version' then
          local version = require 'smush.version'
          write(version.versiontext)
-         if #(version.BUNDLED or {}) > 0 then
-            write('\nBundled rocks:\n  ', concat(version.BUNDLED, '\n  '), '\n')
+         exit(0)
+      elseif a == '--bundled' then
+         local version = require 'smush.version'
+         for i = 1, #(version.BUNDLED or {}) do
+            write(version.BUNDLED[i], '\n')
          end
          exit(0)
       elseif sub(a, 1, 1) == '-' then

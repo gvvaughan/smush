@@ -56,7 +56,8 @@ An option that takes a value is written `--NAME=VALUE` or `--NAME VALUE`.
   * `--external=NAME` says that the host provides the module NAME to the
     bundle (see [External Modules](#5-external-modules));
   * `--help` shows how to use smush, and exits;
-  * `--version` shows which version of smush it is, and exits.
+  * `--version` shows which version of smush it is, and exits;
+  * `--bundled` lists the rocks bundled in smush, one to a line, and exits.
 
 Smush exits with an error for any other option.
 
