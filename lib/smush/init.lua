@@ -99,14 +99,8 @@ local STANDARD = {'coroutine', 'debug', 'io', 'math', 'os', 'string', 'table'}
 
 
 -- The script or module that smush writes, runs bundled packages in a private
--- environment of its own with a copy of the globals, `require` and a
--- `package.loaded` so that nothing leaks into the host's `package` module,
--- and nothing leaks out of it, except for the modules that the host is to
--- provide, named by `--external`, which the bundle asks the host's own
--- `require` for, the first time that it needs one.  Any other module that
--- the host happens to have loaded, such as typecheck or std.strict, which
--- std.normalize and std.functional behave differently with, is not there
--- for the bundle.
+-- environment with a copy of the globals, and a custom `require` and
+-- `package.loaded` so that nothing leaks into the host's `package` module.
 local function header(script, externals)
    local provided = {}
    each(externals, function(name) provided[name] = true end)
@@ -123,7 +117,7 @@ local function header(script, externals)
       'local bundled,loaded={},{}' .. concat(map(externals, function(name)
          return format(' bundled[%q]=function(n)local m=host.loaded[n]if m==nil then m=hostrequire(n)end return m end', name)
       end)) .. seed(STANDARD) .. seed({'_G'}, 'env'),
-      'env.package=setmetatable({preload={},loaded=loaded},{__index=host})' .. seed({'package'}, 'env.package'),
+      'env.package=setmetatable({preload=bundled,loaded=loaded},{__index=host})' .. seed({'package'}, 'env.package'),
       'local require=function(modname)local m=loaded[modname]if m==nil then',
       'if bundled[modname]==nil then',
       [=[error("module '" .. modname .. "' not found:\n   no bundled module '" .. modname .. "'",2)]=],
@@ -180,11 +174,9 @@ end
 
 -- The modules that are in the Lua path and not bundled, but which a
 -- string in *tokens* names.  A string such as 'std.functional._base.argscheck'
--- implies the modules std.functional._base, or std.functional or std, so look
--- for the longest of them that is either bundled, and then there is nothing
--- missing, or is in the Lua path, and then that module is missing, even if a
--- module that it is a part of is bundled.  A module that is only asked for
--- as `pcall(require, 'name')` is not flagged as missing.
+-- could be the module std.functional._base, or std.functional or std, so look
+-- for the longest bundled match and in the Lua path.  Otherwise that module is
+-- not bundled, even if a module it was part of was bundled.
 local function unbundled(tokens, known)
    local r = {}
    for i = 1, len(tokens) do

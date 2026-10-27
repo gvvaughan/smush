@@ -140,6 +140,21 @@ specify smush:
   - it exits for an option that has no value: |
       p = smush(tmpdir, 'one', '--module')
       expect(p).to_fail_while_containing "smush: option '--module' needs a value"
+  - it preloads the modules that it bundles: |
+      spit(tmpdir .. '/pre.lua', "return package.preload\n")
+      p = smush(tmpdir, '--module=pre', 'pre', 'two')
+      r = load(p.output)()
+      expect(type(r.two)).to_be 'function'
+      expect(r.two('two')).to_be 'two'
+  - it does not preload what it does not bundle: |
+      spit(tmpdir .. '/pre.lua', "return package.preload\n")
+      p = smush(tmpdir, '--module=pre', 'pre')
+      expect(load(p.output)().two).to_be(nil)
+  - it keeps its preload out of the host's: |
+      spit(tmpdir .. '/pre.lua', "return package.preload\n")
+      p = smush(tmpdir, '--module=pre', 'pre', 'two')
+      expect(load(p.output)()).not_to_be(package.preload)
+      expect(package.preload.two).to_be(nil)
   - it finds the standard libraries, as the host does: |
       spit(tmpdir .. '/std.lua', "return {string = require 'string', table = require 'table', io = require 'io'}\n")
       p = smush(tmpdir, '--module=std', 'std')

@@ -34,6 +34,10 @@
     where it took it for a module to bundle and said that it could not
     find the module.
 
+  - The `package.preload` of a bundle is the loaders of the modules that
+    it bundles, so that code in a bundle that loads a bundled module in an
+    environment of its own, as a test runner does, can find its loader.
+
 ### Bug fixes
 
   - A bundle can `require` the standard libraries that every supported Lua
