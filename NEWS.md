@@ -41,6 +41,12 @@
 
 ### Bug fixes
 
+  - smush now warns when a bundled module requires a module that isn't
+    bundled, even if the missing module's name starts with the name of
+    one that is.  It had taken `optparse._strict` for a part of
+    `optparse`, and not said that it was missing, so the bundle failed
+    when it ran.
+
   - Two minuses are not written next to each other, which were a
     comment, so `a - -b` is `a - -b` still.
 

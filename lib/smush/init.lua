@@ -161,12 +161,13 @@ local function minify(tokens)
 end
 
 
--- The modules that are in the Lua path and not bundled, but which  a
+-- The modules that are in the Lua path and not bundled, but which a
 -- string in *tokens* names.  A string such as 'std.functional._base.argscheck'
--- implies the modules std.functional._base, or std.functional or std , so look
--- for the longest of them that is already bundled, or else the longest in the
--- path.  A module that is only asked for as `pcall(require, 'name')` is not
--- flagged as missing.
+-- implies the modules std.functional._base, or std.functional or std, so look
+-- for the longest of them that is either bundled, and then there is nothing
+-- missing, or is in the Lua path, and then that module is missing, even if a
+-- module that it is a part of is bundled.  A module that is only asked for
+-- as `pcall(require, 'name')` is not flagged as missing.
 local function unbundled(tokens, known)
    local r = {}
    for i = 1, len(tokens) do
@@ -174,13 +175,12 @@ local function unbundled(tokens, known)
       local name = token[1] == 'STRING' and match(token[2], '^["\']([%w_][%w_.%-]*[%w_])["\']$')
       local optional = i > 2 and tokens[i - 1][2] == ',' and tokens[i - 2][2] == 'require'
       if name and not optional then
-         local found
          while name ~= nil and not known[name] do
-            found = found or (searchpath(name, package.path) and name)
+            if searchpath(name, package.path) then
+               r[name] = true
+               break
+            end
             name = match(name, '^(.+)%.[^.]*$')
-         end
-         if name == nil and found then
-            r[found] = true
          end
       end
    end
