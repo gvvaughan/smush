@@ -2,6 +2,9 @@
 
 ## Noteworthy changes in release ?.? (????-??-??) [?]
 
+
+## Noteworthy changes in release 0.1 (2026-10-28) [stable]
+
 ### New features
 
   - smush is a project of its own, moved from luke, where it bundled
