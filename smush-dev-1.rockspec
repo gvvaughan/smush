@@ -65,9 +65,9 @@ if _MODREV == 'dev' then
    -- Smush is one file with these bundled in, so a development build needs
    -- them only to build it.
    build_dependencies = {
-      'luarocks-build-luke >= 0.2',
-      'std.functional >= 2',
-      'std.normalize >= 4',
+      'luarocks-build-luke >= 0.3',
+      'std.functional >= 2.1',
+      'std.normalize >= 4.1',
       'std.prototype >= 2',
    }
 
@@ -88,7 +88,7 @@ end
 test_dependencies = {
    'ansicolors',
    'luacov',
-   'specl >= 16.1',
+   'specl >= 17',
 }
 
 test = {
