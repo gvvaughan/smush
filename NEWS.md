@@ -2,6 +2,10 @@
 
 ## Noteworthy changes in release ?.? (????-??-??) [?]
 
+### Bug fixes
+
+  - Fixed broken test dependencies to include rocks required by
+    specl examples.
 
 ## Noteworthy changes in release 0.1.1 (2026-10-28) [stable]
 
