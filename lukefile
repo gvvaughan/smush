@@ -8,11 +8,6 @@ luke_format = 0
 package  = 'smush'
 version  = '$USER/$gitref'
 
--- LuaRocks builds smush from the rockspec, which is how `luke release`
--- builds it too, so what is left is for `luke release`: it adds the release
--- to NEWS.md, writes the release rockspec, points the README badges at the
--- release branch, commits the single file that the rock installs, and
--- publishes the manual to gh-pages.
 release = {
    prebuild           = true,
    news               = 'NEWS.md',
