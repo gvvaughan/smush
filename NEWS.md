@@ -2,6 +2,11 @@
 
 ## Noteworthy changes in release ?.? (????-??-??) [?]
 
+### Bug fixes
+
+  - Fixed broken build dependencies to include minimal std.prototype
+    with Scanner objects used by smush.
+
 
 ## Noteworthy changes in release 0.1 (2026-10-28) [stable]
 
