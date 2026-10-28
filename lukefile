@@ -13,7 +13,7 @@ release = {
    news               = 'NEWS.md',
    rockspec           = 'smush-dev-1.rockspec',
    check_dependencies = true,
-   add                = {'build-aux/smush'},
+   add                = {'build-aux/smush', 'lib/smush/version.lua'},
    replacements       = {
       {['README.md']  = {
          {['?branch=master'] = '?branch=release-v@version@'},
