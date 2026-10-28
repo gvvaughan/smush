@@ -1,8 +1,8 @@
 # Smush the source, Luke!
 
 [![License](http://img.shields.io/:license-mit-blue.svg)](http://mit-license.org)
-[![workflow status](https://github.com/gvvaughan/smush/actions/workflows/spec.yml/badge.svg?branch=master)](https://github.com/gvvaughan/smush/actions)
-[![codecov.io](https://codecov.io/gh/gvvaughan/smush/graph/badge.svg?branch=master)](https://codecov.io/gh/gvvaughan/smush?branch=master)
+[![workflow status](https://github.com/gvvaughan/smush/actions/workflows/spec.yml/badge.svg?branch=release-v0.1.3)](https://github.com/gvvaughan/smush/actions)
+[![codecov.io](https://codecov.io/gh/gvvaughan/smush/graph/badge.svg?branch=release-v0.1.3)](https://codecov.io/gh/gvvaughan/smush?branch=release-v0.1.3)
 
 [Smush][] bundles Lua modules into a single file, with their comments
 and white space squeezed out, to run as a program or to load as a
