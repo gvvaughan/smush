@@ -90,6 +90,7 @@ written in [doc/smush.md][manual].
  [lua]:            https://www.lua.org
  [luke]:           https://github.com/gvvaughan/luke
  [luajit]:         https://luajit.org
+ [manual]:         doc/smush.md
  [mit]:            https://mit-license.org
  [smush]:          https://github.com/gvvaughan/smush
  [std.functional]: https://github.com/lua-stdlib/functional
