@@ -2,6 +2,9 @@
 
 ## Noteworthy changes in release ?.? (????-??-??) [?]
 
+
+## Noteworthy changes in release 0.1.1 (2026-10-28) [stable]
+
 ### Bug fixes
 
   - Fixed broken build dependencies to include minimal std.prototype
