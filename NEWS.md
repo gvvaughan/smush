@@ -2,6 +2,9 @@
 
 ## Noteworthy changes in release ?.? (????-??-??) [?]
 
+
+## Noteworthy changes in release 0.1.3 (2026-10-28) [stable]
+
 ### Bug fixes
 
   - Don't forget to commit version.lua on release branches.
