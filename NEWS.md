@@ -2,6 +2,9 @@
 
 ## Noteworthy changes in release ?.? (????-??-??) [?]
 
+
+## Noteworthy changes in release 0.3 (2026-10-29) [stable]
+
 ### New features
 
   - The name `smush` between two at signs in a module that smush bundles
