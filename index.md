@@ -19,6 +19,8 @@ white space squeezed out, to run as a program or to load as a module, for
    such as those written in C
  * [warnings](#6-warnings) of the modules that a bundle needs and doesn't have
  * easy to drive [from a rockspec](#7-rockspecs), as [Luke] and [Specl] do
+ * a [`--bundled`](#8-what-is-bundled) that a program can offer, to say which
+   rocks are in it, and which smush bundled them
 
 Smush is released under the [MIT license][mit], the same license as Lua
 itself.  There is no warranty.
@@ -57,7 +59,9 @@ An option that takes a value is written `--NAME=VALUE` or `--NAME VALUE`.
     bundle (see [External Modules](#5-external-modules));
   * `--help` shows how to use smush, and exits;
   * `--version` shows which version of smush it is, and exits;
-  * `--bundled` lists the rocks bundled in smush, one to a line, and exits.
+  * `--bundled` says which version of smush it is, and lists the rocks
+    bundled in it, one to a line, and exits (see
+    [What is Bundled](#8-what-is-bundled)).
 
 Smush exits with an error for any other option.
 
@@ -170,6 +174,44 @@ build = {
 Luke finds smush in `PATH`, and builds `build-aux/specl` from the sources.
 A module that is named, as `std.normalize` is, is found in `LUA_PATH`,
 which `luarocks path` sets.
+
+
+## 8. What is Bundled
+
+Every bundle has a module `smush.bundled`, which smush writes into it, with
+a function `showbundled`.  It writes the version of the smush that bundled
+it, and then each rock that the modules in the bundle are from, as LuaRocks
+has them installed, with its version, one to a line:
+
+    smush 0.4 bundled:
+    std.functional 2.1-1
+    std.normalize 5.0.1-1
+    std.prototype 2.1-1
+
+Smush finds the rock of a module in the manifest of the LuaRocks tree that
+has its file, so it needs no LuaRocks itself.  A module that no rock has,
+such as a file of the project that is bundled, or a checkout in the Lua
+path, is not listed.  `showbundled` writes with `io.write`, or with a
+function that it is given: `showbundled(write)`.
+
+A program calls it from its own `--bundled` option, so that the help and
+the man page of the program have the option, and says that it is not
+bundled when it cannot `require` the module, as it cannot when it is run
+from a source tree:
+
+{% highlight lua %}
+local ok, bundled = pcall(require, 'smush.bundled')
+if ok then
+   bundled.showbundled()
+else
+   io.stderr:write 'not a bundled program!\n'
+end
+{% endhighlight %}
+
+[Luke] and [Specl] do, as does `smush --bundled`.  A source of the bundle
+that is called `smush.bundled` is bundled as it is, and smush writes no
+module of that name.
+
 
 Report bugs at the [issue tracker][issues].
 
