@@ -2,6 +2,17 @@
 
 ## Noteworthy changes in release ?.? (????-??-??) [?]
 
+### New features
+
+  - The name `smush` between two at signs in a module that smush bundles
+    is replaced with the version of the smush that bundles it, so that a
+    program can say which smush it was bundled by.  Luke, after 0.9,
+    leaves it alone in the templates that it fills.
+
+  - `smush --bundled` says which smush bundled it, as `smush 0.3 bundled:`
+    before the rocks that are bundled in it, with the `SMUSH` of its
+    `smush/version.lua.in`, where it listed smush itself first.
+
 
 ## Noteworthy changes in release 0.2 (2026-10-29) [stable]
 

@@ -203,18 +203,28 @@ specify smush:
            "return {VERSION = '1.2', versiontext = 'smush (Smush) 1.2\\n', BUNDLED = {}}\n")
       p = smush(tmpdir, '--module=one', 'one', 'two')
       expect(p.output).to_match '^%-%-%[%[ smush 1%.2: minified code follows, see %-%-help text for source location! %]%]\n'
-  - it lists itself, and the rocks that are bundled in it with --bundled, if it says: |
+  - it fills in its version where a module has it between at signs: |
       os.execute('mkdir ' .. tmpdir .. '/smush')
       spit(tmpdir .. '/smush/version.lua',
-           "return {VERSION = '1.2', versiontext = 'smush (Smush) 1\\n', BUNDLED = {'a 1-1', 'b 2-1'}}\n")
+           "return {VERSION = '1.2', versiontext = 'smush (Smush) 1.2\\n', BUNDLED = {}}\n")
+      spit(tmpdir .. '/by.lua', "return {by = '@smush@', other = '@smushed@'}\n")
+      p = smush(tmpdir, '--module=by', 'by')
+      expect(load(p.output)()).to_equal {by = '1.2', other = '@smushed@'}
+  - it lists the rocks that are bundled in it with --bundled, and which smush bundled it, if it says: |
+      os.execute('mkdir ' .. tmpdir .. '/smush')
+      spit(tmpdir .. '/smush/version.lua',
+           "return {SMUSH = '0.1', versiontext = 'smush (Smush) 1\\n', BUNDLED = {'a 1-1', 'b 2-1'}}\n")
       p = smush(tmpdir, '--bundled')
-      expect(p).to_succeed_while_matching '^smush 1%.2\na 1%-1\nb 2%-1\n$'
+      expect(p).to_succeed_while_matching '^smush 0%.1 bundled:\na 1%-1\nb 2%-1\n$'
+      spit(tmpdir .. '/smush/version.lua',
+           "return {SMUSH = '@smush@', versiontext = 'smush (Smush) 1\\n', BUNDLED = {'a 1-1'}}\n")
+      p = smush(tmpdir, '--bundled')
+      expect(p).to_succeed_while_matching '^a 1%-1\n$'
       p = smush(tmpdir, '--version')
       expect(p).to_succeed_while_matching '^smush %(Smush%) 1\n$'
-      spit(tmpdir .. '/smush/version.lua',
-           "return {VERSION = '1.2', versiontext = 'smush (Smush) 1\\n', BUNDLED = {}}\n")
+      spit(tmpdir .. '/smush/version.lua', "return {SMUSH = '', versiontext = 'smush (Smush) 1\\n', BUNDLED = {}}\n")
       p = smush(tmpdir, '--bundled')
-      expect(p).to_succeed_while_matching '^smush 1%.2\n$'
+      expect(p).to_succeed_while_matching '^$'
   - it exits for a file that it cannot read: |
       p = smush(tmpdir, '--module=x', tmpdir .. '/nonesuch.lua')
       expect(p).to_fail_while_matching 'No such file'

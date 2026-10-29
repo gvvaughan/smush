@@ -98,13 +98,19 @@ end
 local STANDARD = {'coroutine', 'debug', 'io', 'math', 'os', 'string', 'table'}
 
 
+-- The version of this smush, if it has one, to say which one wrote a bundle.
+local function smush_version()
+   local ok, version = pcall(require, 'smush.version')
+   return ok and version.VERSION or nil
+end
+
+
 -- The script or module that smush writes, runs bundled packages in a private
 -- environment with a copy of the globals, and a custom `require` and
 -- `package.loaded` so that nothing leaks into the host's `package` module.
 local function header(script, externals)
-   -- The version of this smush, to say which one wrote the bundle.
-   local ok, version = pcall(require, 'smush.version')
-   local smushed = ok and version.VERSION and ('smush ' .. version.VERSION .. ': ') or ''
+   local version = smush_version()
+   local smushed = version and ('smush ' .. version .. ': ') or ''
    local provided = {}
    each(externals, function(name) provided[name] = true end)
    local function seed(names, value)
@@ -143,12 +149,18 @@ local function footer(script, entry)
 end
 
 -- The tokens of *fname* that matter to the program, without its comments
--- and whitespace.
+-- and whitespace.  The name of this smush between two at signs is the
+-- version of it, so that a program can say which smush bundled it.
 local function significant(fname)
    local text, err = slurp(File(fname))
    if text == nil then
       stderr:write('smush: ', err, '\n')
       exit(1)
+   end
+   local version = smush_version()
+   if version then
+      -- Not written whole, or smush would fill it in its own source.
+      text = gsub(text, '@' .. 'smush' .. '@', version)
    end
    local ok, tokens = pcall(function()
       return Lexer(text, fname):tokens()
@@ -222,7 +234,7 @@ have a copy of one file share the one.
                    asks the host's `require` for it when it needs it
   --help           show this help, and exit
   --version        show the version, and exit
-  --bundled        list smush, and the rocks bundled in it, and exit
+  --bundled        list the rocks bundled in smush, and exit
 ]]
 
 
@@ -269,8 +281,10 @@ local function main(args)
          exit(0)
       elseif a == '--bundled' then
          local version = require 'smush.version'
-         if version.VERSION then
-            write('smush ', version.VERSION, '\n')
+         -- The smush that bundled this one, if its version file says.
+         local by = version.SMUSH
+         if by ~= nil and by ~= '' and not find(by, '@', 1, true) then
+            write('smush ', by, ' bundled:\n')
          end
          for i = 1, #(version.BUNDLED or {}) do
             write(version.BUNDLED[i], '\n')

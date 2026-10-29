@@ -62,6 +62,11 @@ globals, and a custom `require` and `package.loaded`, so:
     a test runner use its bundled libraries even while it tests a different
     version of the same libraries it is calling internally.
 
+The text of each module that smush bundles has the name `smush` between two
+at signs replaced with the version of the smush that bundles it, so that a
+program can say which smush it was bundled by: smush does that in
+`smush --bundled`, with the `SMUSH` of its `smush/version.lua.in`.
+
 A module that has a C part can be partially bundled for only its Lua part,
 with `--external` for the C part.
 
