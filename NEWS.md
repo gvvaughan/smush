@@ -2,6 +2,9 @@
 
 ## Noteworthy changes in release ?.? (????-??-??) [?]
 
+
+## Noteworthy changes in release 0.2 (2026-10-29) [stable]
+
 ### New features
 
   - The bundle that smush writes says which version of smush wrote it,
