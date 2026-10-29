@@ -1,7 +1,5 @@
 # Smush NEWS - User visible changes
 
-## Noteworthy changes in release ?.? (????-??-??) [?]
-
 
 ## Noteworthy changes in release 0.4 (2026-10-29) [stable]
 
