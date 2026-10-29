@@ -4,6 +4,4 @@
 *~
 .DS_Store
 /*.src.rock
-/build-aux/smush
-/lib/smush/version.lua
 /luacov.*.out
