@@ -5,8 +5,6 @@
 
 return {
    VERSION = '@version@',
-   BUNDLED = {@bundled@},
-   SMUSH = '@smush@',
    versiontext = [[
 smush (Smush) @version@
 Written by Gary V. Vaughan <gary@gnu.org>, 2017

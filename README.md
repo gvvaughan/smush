@@ -62,10 +62,17 @@ globals, and a custom `require` and `package.loaded`, so:
     a test runner use its bundled libraries even while it tests a different
     version of the same libraries it is calling internally.
 
-The text of each module that smush bundles has the name `smush` between two
-at signs replaced with the version of the smush that bundles it, so that a
-program can say which smush it was bundled by: smush does that in
-`smush --bundled`, with the `SMUSH` of its `smush/version.lua.in`.
+Every bundle has a module `smush.bundled`, with a function `showbundled`
+that writes `smush VERSION bundled:`, the version of the smush that bundled
+it, and then each rock that the modules in it are from, as LuaRocks has them
+installed, one to a line, with its version.  A program calls it from its own
+`--bundled` option, so that the help and the man page of the program have
+the option, and says that it is not bundled if it cannot `require` the module:
+
+    local ok, bundled = pcall(require, 'smush.bundled')
+    if ok then bundled.showbundled() else print 'not a bundled program!' end
+
+A module that no rock has, such as a file of the project, is not listed.
 
 A module that has a C part can be partially bundled for only its Lua part,
 with `--external` for the C part.

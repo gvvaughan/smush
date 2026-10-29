@@ -2,6 +2,21 @@
 
 ## Noteworthy changes in release ?.? (????-??-??) [?]
 
+### New features
+
+  - Every bundle has a module `smush.bundled`, with a function
+    `showbundled` that writes `smush 0.4 bundled:`, the version of the
+    smush that bundled it, and then the rocks that the modules in it are
+    from, with their versions, as LuaRocks has them installed.  A program
+    calls it from its own `--bundled` option, and says that it is not
+    bundled when it cannot `require` the module.  `smush --bundled` does.
+
+### Incompatible changes
+
+  - `@smush@` in a module is no longer replaced with the version of smush,
+    and its `version.lua` has no `BUNDLED` or `SMUSH`, because a program
+    gets what it bundles from `smush.bundled`.
+
 
 ## Noteworthy changes in release 0.3 (2026-10-29) [stable]
 

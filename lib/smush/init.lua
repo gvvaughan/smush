@@ -31,6 +31,7 @@ local _ENV = require 'std.normalize' {
    'string.match',
    'string.sub',
    'table.concat',
+   'table.sort',
    File = _context.File,
    slurp = _context.slurp,
    each = _std.each,
@@ -149,18 +150,12 @@ local function footer(script, entry)
 end
 
 -- The tokens of *fname* that matter to the program, without its comments
--- and whitespace.  The name of this smush between two at signs is the
--- version of it, so that a program can say which smush bundled it.
+-- and whitespace.
 local function significant(fname)
    local text, err = slurp(File(fname))
    if text == nil then
       stderr:write('smush: ', err, '\n')
       exit(1)
-   end
-   local version = smush_version()
-   if version then
-      -- Not written whole, or smush would fill it in its own source.
-      text = gsub(text, '@' .. 'smush' .. '@', version)
    end
    local ok, tokens = pcall(function()
       return Lexer(text, fname):tokens()
@@ -173,6 +168,49 @@ local function significant(fname)
       return token[1] == 'COMMENT' or token[1] == 'WHITESPACE'
    end)
 end
+
+-- The manifests of LuaRocks trees that rockof has read, by file.
+local manifests = {}
+
+-- The rock, and its version, that LuaRocks installed the file *fname* of
+-- a module from, as `rock version`, or nothing if it is not in a tree of
+-- LuaRocks, or none says that it has it.  A tree lists the files of every
+-- rock in its manifest, so there is no need for LuaRocks itself.
+local function rockof(fname)
+   local root, luaver, file = match(fname, '^(.*)/share/lua/([%d.]+)/(.+)%.lua$')
+   if root == nil then
+      return nil
+   end
+   local path = root .. '/lib/luarocks/rocks-' .. luaver .. '/manifest'
+   if manifests[path] == nil then
+      local text = slurp(File(path))
+      local manifest = {}
+      local chunk = text and load(text, '=' .. path, 't', manifest)
+      manifests[path] = chunk ~= nil and pcall(chunk) and manifest or false
+   end
+   local manifest = manifests[path]
+   local providers = manifest and (manifest.modules or {})[(gsub(file, '/', '.'))]
+   local rock, version = match(providers and providers[1] or '', '^([^/]*)/(.+)$')
+   if rock ~= nil then
+      return rock .. ' ' .. version
+   end
+end
+
+
+-- The module that a bundle has for what it says with `--bundled`: the
+-- version of this smush, which bundled it, and the rocks that its modules
+-- come from, as the program that it is has them, for it to call from its
+-- own `--bundled` option, so that the help and man page of the program
+-- have the option.  Its `showbundled` writes with `io.write`, or with the
+-- function that it is given.  *rocks* is a list of `rock version`.
+local function bundled_module(rocks)
+   local version = smush_version()
+   local text = 'smush ' .. (version and (version .. ' ') or '') .. 'bundled:\n' ..
+      concat(map(rocks, function(rock) return rock .. '\n' end))
+   return "bundled['smush.bundled']=function()return{showbundled=function(write)(write or io.write)(" ..
+      format('%q', text) .. ')end}end'
+end
+
 
 -- Write *tokens* with whitespace strategically injected back into the stream.
 local function minify(tokens)
@@ -280,15 +318,13 @@ local function main(args)
          write(version.versiontext)
          exit(0)
       elseif a == '--bundled' then
-         local version = require 'smush.version'
-         -- The smush that bundled this one, if its version file says.
-         local by = version.SMUSH
-         if by ~= nil and by ~= '' and not find(by, '@', 1, true) then
-            write('smush ', by, ' bundled:\n')
+         local ok, bundled = pcall(require, 'smush.bundled')
+         if not ok then
+            stderr:write('smush: not a bundled program!\n',
+               'Run build-aux/smush, which smush bundles, to list what is in it.\n')
+            exit(1)
          end
-         for i = 1, #(version.BUNDLED or {}) do
-            write(version.BUNDLED[i], '\n')
-         end
+         bundled.showbundled()
          exit(0)
       elseif sub(a, 1, 1) == '-' then
          stderr:write("smush: unrecognized option '", a, "'\n", USAGE)
@@ -306,11 +342,17 @@ local function main(args)
       exit(1)
    end
 
-   local tokens = {}
+   local tokens, rocks, seen = {}, {}, {}
    each(sources, function(a)
       local name, fname = source(a)
       known[name], tokens[name] = true, significant(fname)
+      local rock = rockof(fname)
+      if rock ~= nil and not seen[rock] then
+         seen[rock] = true
+         rocks[#rocks + 1] = rock
+      end
    end)
+   sort(rocks)
 
    each(aliases, function(alias)
       local name, target = alias[1], alias[2]
@@ -338,6 +380,10 @@ local function main(args)
    each(aliases, function(alias)
       print("bundled['" .. alias[1] .. "']=function()return require'" .. alias[2] .. "'end")
    end)
+
+   if not known['smush.bundled'] then
+      print(bundled_module(rocks))
+   end
 
    print(footer(script, entry))
 end
