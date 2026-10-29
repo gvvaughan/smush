@@ -4,7 +4,7 @@ account: gvvaughan
 name:         Smush
 description:  Bundle Lua modules into a single file.
 forkme:       "https://github.com/gvvaughan/smush"
-release-no:   0.1.3
+release-no:   0.2
 
 url:      "https://gvvaughan.github.io/smush"
 markdown: kramdown
