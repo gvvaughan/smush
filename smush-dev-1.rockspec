@@ -88,7 +88,6 @@ end
 -- The specs run againt the source in lib/, so they need the libraries that
 -- smush bundles installed.
 test_dependencies = {
-   'ansicolors',
    'luacov',
    'specl >= 17',
    'std.functional >= 2.1',
