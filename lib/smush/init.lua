@@ -102,6 +102,9 @@ local STANDARD = {'coroutine', 'debug', 'io', 'math', 'os', 'string', 'table'}
 -- environment with a copy of the globals, and a custom `require` and
 -- `package.loaded` so that nothing leaks into the host's `package` module.
 local function header(script, externals)
+   -- The version of this smush, to say which one wrote the bundle.
+   local ok, version = pcall(require, 'smush.version')
+   local smushed = ok and version.VERSION and ('smush ' .. version.VERSION .. ': ') or ''
    local provided = {}
    each(externals, function(name) provided[name] = true end)
    local function seed(names, value)
@@ -111,7 +114,7 @@ local function header(script, externals)
    end
 
    return (script and '#!/usr/bin/env lua\n' or '') .. concat({
-      '--[[ minified code follows, see --help text for source location! ]]',
+      '--[[ ' .. smushed .. 'minified code follows, see --help text for source location! ]]',
       'local host,hostrequire=package,require',
       'local env={}for k,v in next,_G do env[k]=v end env._G=env',
       'local bundled,loaded={},{}' .. concat(map(externals, function(name)
@@ -219,7 +222,7 @@ have a copy of one file share the one.
                    asks the host's `require` for it when it needs it
   --help           show this help, and exit
   --version        show the version, and exit
-  --bundled        list the rocks bundled in smush, and exit
+  --bundled        list smush, and the rocks bundled in it, and exit
 ]]
 
 
@@ -266,6 +269,9 @@ local function main(args)
          exit(0)
       elseif a == '--bundled' then
          local version = require 'smush.version'
+         if version.VERSION then
+            write('smush ', version.VERSION, '\n')
+         end
          for i = 1, #(version.BUNDLED or {}) do
             write(version.BUNDLED[i], '\n')
          end

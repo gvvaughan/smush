@@ -2,6 +2,16 @@
 
 ## Noteworthy changes in release ?.? (????-??-??) [?]
 
+### New features
+
+  - The bundle that smush writes says which version of smush wrote it,
+    in the comment on its first line, as `--[[ smush 0.2: minified code
+    follows, see ... ]]`.
+
+  - `smush --bundled` lists smush itself first, as `smush 0.2`, and then
+    the rocks that are bundled in it, so that the version of smush that
+    makes the bundles of other programs can be told from its output.
+
 ### Bug fixes
 
   - Ensure luarocks doesn't install all the sources that luke doesn't need,

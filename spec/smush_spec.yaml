@@ -197,17 +197,24 @@ specify smush:
   - it says which version it is: |
       p = smush(tmpdir, '--version')
       expect(p).to_succeed_while_matching '^smush %(Smush%) [^\n]+\n'
-  - it lists the rocks that are bundled in it with --bundled, if it says: |
+  - it says which version wrote a bundle in the first line: |
       os.execute('mkdir ' .. tmpdir .. '/smush')
       spit(tmpdir .. '/smush/version.lua',
-           "return {versiontext = 'smush (Smush) 1\\n', BUNDLED = {'a 1-1', 'b 2-1'}}\n")
+           "return {VERSION = '1.2', versiontext = 'smush (Smush) 1.2\\n', BUNDLED = {}}\n")
+      p = smush(tmpdir, '--module=one', 'one', 'two')
+      expect(p.output).to_match '^%-%-%[%[ smush 1%.2: minified code follows, see %-%-help text for source location! %]%]\n'
+  - it lists itself, and the rocks that are bundled in it with --bundled, if it says: |
+      os.execute('mkdir ' .. tmpdir .. '/smush')
+      spit(tmpdir .. '/smush/version.lua',
+           "return {VERSION = '1.2', versiontext = 'smush (Smush) 1\\n', BUNDLED = {'a 1-1', 'b 2-1'}}\n")
       p = smush(tmpdir, '--bundled')
-      expect(p).to_succeed_while_matching '^a 1%-1\nb 2%-1\n$'
+      expect(p).to_succeed_while_matching '^smush 1%.2\na 1%-1\nb 2%-1\n$'
       p = smush(tmpdir, '--version')
       expect(p).to_succeed_while_matching '^smush %(Smush%) 1\n$'
-      spit(tmpdir .. '/smush/version.lua', "return {versiontext = 'smush (Smush) 1\\n', BUNDLED = {}}\n")
+      spit(tmpdir .. '/smush/version.lua',
+           "return {VERSION = '1.2', versiontext = 'smush (Smush) 1\\n', BUNDLED = {}}\n")
       p = smush(tmpdir, '--bundled')
-      expect(p).to_succeed_while_matching '^$'
+      expect(p).to_succeed_while_matching '^smush 1%.2\n$'
   - it exits for a file that it cannot read: |
       p = smush(tmpdir, '--module=x', tmpdir .. '/nonesuch.lua')
       expect(p).to_fail_while_matching 'No such file'
