@@ -2,6 +2,9 @@
 
 ## Noteworthy changes in release ?.? (????-??-??) [?]
 
+
+## Noteworthy changes in release 0.4 (2026-10-29) [stable]
+
 ### New features
 
   - Every bundle has a module `smush.bundled`, with a function
