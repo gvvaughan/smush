@@ -98,7 +98,39 @@ written in [doc/smush.md][manual].
 
     specl spec/*_spec.yaml
 
+## Bug reports and code contributions
+
+Please make bug reports and suggestions as [GitHub issues][issues].
+Pull requests are especially appreciated.
+
+But first, please check that your issue has not already been reported
+by someone else, and that it is not already fixed on [master][github]
+in preparation for the next release.
+
+There is no strict coding style, but please bear in mind the following
+points when proposing changes:
+
+0. Follow existing code. There are a lot of useful patterns and
+   avoided traps there.
+
+1. 3-character indentation using SPACEs in Lua sources.
+
+2. Simple strings are easiest to type using single-quote delimiters
+   saving double-quotes for where a string contains apostrophes.
+
+3. Save horizontal space by only using SPACEs where the parser requires
+   them.
+
+4. Use vertical space to separate out compound statements to help the
+   coverage reports discover untested lines.
+
+5. Prefer explicit string function calls over object methods, to mitigate
+   issues with monkey-patching in caller environment.
+
+
+ [github]:         https://github.com/gvvaughan/smush
  [github.io]:      https://gvvaughan.github.io/smush
+ [issues]:         https://github.com/gvvaughan/smush/issues
  [lua]:            https://www.lua.org
  [luke]:           https://github.com/gvvaughan/luke
  [luajit]:         https://luajit.org
