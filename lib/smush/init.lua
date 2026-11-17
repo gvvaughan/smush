@@ -212,14 +212,15 @@ local function bundled_module(rocks)
 end
 
 
--- Write *tokens* with whitespace strategically injected back into the stream.
-local function minify(tokens)
+-- Put *tokens* in *put* with whitespace strategically injected back into the
+-- stream.
+local function minify(tokens, put)
    local line, prev = 1
    each(tokens, function(token)
       if needspace(prev, token) then
-         write(line < token[3] and '\n' or ' ')
+         put(line < token[3] and '\n' or ' ')
       end
-      write(tostring(token[2]))
+      put(tostring(token[2]))
       prev, line = token, token[3]
    end)
 end
@@ -364,13 +365,18 @@ local function main(args)
       known[name] = true
    end)
 
-   print(header(script, sorted(externals)))
+   local text = {}
+   local function put(s)
+      text[#text + 1] = s
+   end
+
+   put(header(script, sorted(externals)) .. '\n')
 
    each(sources, function(a)
       local name = source(a)
-      print("bundled['" .. name .. "']=function()")
-      minify(tokens[name])
-      print '\nend'
+      put("bundled['" .. name .. "']=function()\n")
+      minify(tokens[name], put)
+      put '\nend\n'
       each(unbundled(tokens[name], known), function(missing)
          stderr:write('smush: warning: ', name, " names the module '", missing,
             "', which is in the Lua path, but is not bundled\n")
@@ -378,14 +384,15 @@ local function main(args)
    end)
 
    each(aliases, function(alias)
-      print("bundled['" .. alias[1] .. "']=function()return require'" .. alias[2] .. "'end")
+      put("bundled['" .. alias[1] .. "']=function()return require'" .. alias[2] .. "'end\n")
    end)
 
    if not known['smush.bundled'] then
-      print(bundled_module(rocks))
+      put(bundled_module(rocks) .. '\n')
    end
 
-   print(footer(script, entry))
+   put(footer(script, entry) .. '\n')
+   write(concat(text))
 end
 
 return {
