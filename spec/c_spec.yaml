@@ -1,0 +1,89 @@
+# Smush the source, Luke!
+# Copyright (C) 2026 Gary V. Vaughan
+
+before: |
+  minify = require 'smush.c'.minify
+
+specify smush.c:
+- describe minify:
+  - it takes out comments, blank lines and indentation, and the space that is not needed: |
+      expect(minify("int x;   /* the count */\n\n\t// nothing\n    int y;\t\n")).to_be "int x;int y;\n"
+
+  - it leaves no space round an operator or a bracket: |
+      expect(minify("a = b + (c * d) / 2;\nf (x , y) ;\n")).to_be "a=b+(c*d)/2;f(x,y);\n"
+
+  - it does not take a // or a /* in the name of a header for a comment: |
+      expect(minify("#include <sys//stat.h> // the header\n#include <a/*b.h>\nint x;\n")).
+         to_be "#include <sys//stat.h>\n#include <a/*b.h>\nint x;\n"
+
+  - it keeps what is in a string or a character: |
+      local text = 'char *s = "a  //  b /* c */";\nint q = \'"\', c = \'/\';\n'
+      expect(minify(text)).to_be 'char*s="a  //  b /* c */";int q=\'"\',c=\'/\';\n'
+
+  - it keeps each preprocessor directive on a line of its own: |
+      expect(minify("  #include <sys/stat.h>\n\n#define A(x)   ((x) + 1) // plus one\nint x;\n")).
+         to_be "#include <sys/stat.h>\n#define A(x) ((x) + 1)\nint x;\n"
+      expect(minify("int x;\n#if A\nint y;\n#endif\n")).to_be "int x;\n#if A\nint y;\n#endif\n"
+
+  - it keeps the difference between a directive that has a space before a bracket and one that has none: |
+      expect(minify("#define F(x) x\n#define G (x)\n")).to_be "#define F(x) x\n#define G (x)\n"
+
+  - it leaves a space where a block comment was between two tokens: |
+      expect(minify("a/**/b -/**/-c\n")).to_be "a b- -c\n"
+
+  - it leaves a space between tokens that would be one without it: |
+      expect(minify("a+ +b; c- -d; e- - f; g & &h; i < <j;\n")).to_be "a+ +b;c- -d;e- -f;g& &h;i< <j;\n"
+      expect(minify('x = L "a";\n')).to_be 'x=L "a";\n'
+      expect(minify("a / *p; b / /c\n")).to_be "a/ *p;b/ /c\n"
+
+  - it leaves no space where the tokens are read as they were without it: |
+      expect(minify("a++ + b; c-- - d; p->q; x <<= 1;\n")).to_be "a+++b;c---d;p->q;x<<=1;\n"
+
+  - it keeps a backslash at the end of a line in a directive, as one line: |
+      expect(minify("#define F(x) \\\n    (x) + \\\n    1\n")).to_be "#define F(x) (x) + 1\n"
+
+  - it takes a comment that a backslash carries on, with blanks or a return after it: |
+      expect(minify("int a; // one \\\n   still comment\nint b;\n")).to_be "int a;int b;\n"
+      expect(minify("int a; // one \\ \t\n   still\nint b;\n")).to_be "int a;int b;\n"
+      expect(minify("int a; // one \\\r\n   still\r\nint b;\r\n")).to_be "int a;int b;\n"
+
+  - it keeps the blanks at the start of a line that a string is carried on to: |
+      local text = 'char *s = "ab \\\n    cd";\n'
+      expect(minify(text)).to_be 'char*s="ab \\\n    cd";\n'
+
+  - it ends a quote at the end of its line: |
+      expect(minify("#error can't build\nint x;\n")).to_be "#error can't build\nint x;\n"
+
+  - it ends with a newline, or is empty: |
+      expect(minify 'int x;').to_be "int x;\n"
+      expect(minify '').to_be ''
+      expect(minify "  \n\n  /* x */\n").to_be ''
+      expect(minify '#endif').to_be "#endif\n"
+
+  - it is minified once: |
+      local text = "#define A(x) ((x) + 1)\nint f(int x) { return A(x) - -x; }\n"
+      expect(minify(minify(text))).to_be(minify(text))
+
+- describe minify with readable:
+  - it keeps the lines and the indentation, and takes out the comments and blank lines: |
+      local text = "/* the file */\n\n#include <sys/stat.h>   // header\n\nint main (int argc,   char **argv)\n" ..
+         "{\n    /* comment */\n    int x   = argc;   // count\n\n    if (x) {\n        return x -  -1;\n    }\n" ..
+         "    return 0;\n}\n"
+      expect(minify(text, {readable = true})).
+         to_be("#include <sys/stat.h>\nint main (int argc, char **argv)\n{\n    int x = argc;\n" ..
+            "    if (x) {\n        return x - -1;\n    }\n    return 0;\n}\n")
+
+  - it keeps a backslash at the end of a line, and the indentation after it: |
+      expect(minify("#define F(x) \\\n    (x) +   \\\n    1 /* one */\nint x;\n", {readable = true})).
+         to_be "#define F(x) \\\n    (x) + \\\n    1\nint x;\n"
+
+  - it leaves a space where a block comment was between two tokens, and none that is not needed: |
+      expect(minify("a/**/b -/**/-c; d+e;\n", {readable = true})).to_be "a b - -c; d+e;\n"
+
+  - it keeps what is in a string or a character, and the name of a header: |
+      local text = '  char *s = "a  //  b /* c */";\n#include <a//b.h>\n'
+      expect(minify(text, {readable = true})).to_be '  char *s = "a  //  b /* c */";\n#include <a//b.h>\n'
+
+  - it ends with a newline, or is empty: |
+      expect(minify('int x;', {readable = true})).to_be "int x;\n"
+      expect(minify("  \n /* x */\n", {readable = true})).to_be ''

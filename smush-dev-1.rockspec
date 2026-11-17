@@ -49,6 +49,8 @@ build = {
 if _MODREV == 'dev' then
    -- The rock installs only build-aux/smush as the `smush` command.
    local bundled = {
+      'lib/smush/c.lua',
+      'lib/smush/clexer.lua',
       'lib/smush/init.lua',
       'lib/smush/lexer.lua',
       'lib/smush/minify.lua',

@@ -1,0 +1,155 @@
+# Smush the source, Luke!
+# Copyright (C) 2026 Gary V. Vaughan
+
+before: |
+  this_module = 'smush.clexer'
+
+  lexer = require(this_module)
+  Lexer = lexer.prototype
+  Scanner = require 'std.prototype.scanner'.prototype
+
+  function objtype(o)
+     return (getmetatable(o) or {})._type
+  end
+
+  -- What *text* is, as kind:text@line for each of its tokens.
+  function lex(text, name)
+     local r = {}
+     for i, token in ipairs(Lexer(text, name):tokens()) do
+        r[i] = token[1] .. ':' .. token[2]:gsub('\n', '\\n'):gsub('\t', '\\t') .. '@' .. token[3]
+     end
+     return table.concat(r, ' ')
+  end
+
+specify smush.clexer:
+- describe construction:
+  - it is a scanner of the source: |
+      l = Lexer('int x;', 'x.c')
+      expect(objtype(l)).to_be 'CLexer'
+      expect(l.name).to_be 'x.c'
+      expect(l:peek()).to_be 'i'
+  - it can be derived from again: |
+      Plain = Lexer {_type = 'PlainLexer'}
+      expect(objtype(Plain 'int x;')).to_be 'PlainLexer'
+      expect(Plain('int x;'):token()[2]).to_be 'int'
+
+
+- describe tokens:
+  - it has no tokens for no source: |
+      expect(lex '').to_be ''
+  - it reads every character into a token, so that the tokens joined are the source: |
+      source = '#define A(x) \\\n  ((x) + 1) // one\nchar *s = "a\\"b"; /* two\nthree */ a->b <<= 0x1p-2 ... L\'c\'\n'
+      text = {}
+      for _, token in ipairs(Lexer(source):tokens()) do text[#text + 1] = token[2] end
+      expect(table.concat(text)).to_be(source)
+
+
+- describe whitespace:
+  - it is a token of the run of blanks and the ends of lines: |
+      expect(lex ' \t x\n y').to_be 'WHITESPACE: \\t @1 IDENTIFIER:x@1 WHITESPACE:\\n @1 IDENTIFIER:y@2'
+  - it includes carriage returns, form feeds and vertical tabs: |
+      expect(lex '\r\f\vx').to_be 'WHITESPACE:\r\f\v@1 IDENTIFIER:x@1'
+  - it is a backslash at the end of a line, which does not end the line: |
+      expect(lex 'a \\\nb').to_be 'IDENTIFIER:a@1 WHITESPACE: @1 WHITESPACE:\\\\n@1 IDENTIFIER:b@2'
+  - it is a backslash with blanks or a return before the end of the line: |
+      expect(lex 'a\\ \t\r\nb').to_be 'IDENTIFIER:a@1 WHITESPACE:\\ \\t\r\\n@1 IDENTIFIER:b@2'
+  - it is not a backslash that has other text after it: |
+      expect(lex 'a\\b').to_be 'IDENTIFIER:a@1 PUNCTUATION:\\@1 IDENTIFIER:b@1'
+
+
+- describe identifier:
+  - it is letters, digits and underscores, from a letter or underscore: |
+      expect(lex '_a1 B2_').to_be 'IDENTIFIER:_a1@1 WHITESPACE: @1 IDENTIFIER:B2_@1'
+  - it stops at punctuation: |
+      expect(lex 'a.b->c').to_be 'IDENTIFIER:a@1 PUNCTUATION:.@1 IDENTIFIER:b@1 PUNCTUATION:->@1 IDENTIFIER:c@1'
+  - it is the prefix of a string or a character, if one follows with no space: |
+      expect(lex 'L"a" u8"b" U\'c\' L "d"').
+         to_be [[STRING:L"a"@1 WHITESPACE: @1 STRING:u8"b"@1 WHITESPACE: @1 STRING:U'c'@1 WHITESPACE: @1 IDENTIFIER:L@1 WHITESPACE: @1 STRING:"d"@1]]
+  - it is not the prefix of a string if it is another name: |
+      expect(lex 'x"a"').to_be 'IDENTIFIER:x@1 STRING:"a"@1'
+
+
+- describe number:
+  - it is digits: |
+      expect(lex '42 007').to_be 'NUMBER:42@1 WHITESPACE: @1 NUMBER:007@1'
+  - it has a fraction, an exponent, and a sign after it: |
+      expect(lex '3.14 5. .5 1e5 2E+3 4e-2').
+         to_be 'NUMBER:3.14@1 WHITESPACE: @1 NUMBER:5.@1 WHITESPACE: @1 NUMBER:.5@1 WHITESPACE: @1 NUMBER:1e5@1 WHITESPACE: @1 NUMBER:2E+3@1 WHITESPACE: @1 NUMBER:4e-2@1'
+  - it can be hexadecimal, with a binary exponent: |
+      expect(lex '0x1F 0xA.8p1 0x1p-2').
+         to_be 'NUMBER:0x1F@1 WHITESPACE: @1 NUMBER:0xA.8p1@1 WHITESPACE: @1 NUMBER:0x1p-2@1'
+  - it takes the letters that follow, as the preprocessor does: |
+      expect(lex '10UL 3x').to_be 'NUMBER:10UL@1 WHITESPACE: @1 NUMBER:3x@1'
+  - it stops at an operator: |
+      expect(lex '1+2').to_be 'NUMBER:1@1 PUNCTUATION:+@1 NUMBER:2@1'
+  - it is not a point on its own: |
+      expect(lex 'a.b').to_be 'IDENTIFIER:a@1 PUNCTUATION:.@1 IDENTIFIER:b@1'
+
+
+- describe shortstring:
+  - it is in single or double quotes: |
+      expect(lex [["a" 'b']]).to_be [[STRING:"a"@1 WHITESPACE: @1 STRING:'b'@1]]
+  - it can have the other quote inside: |
+      expect(lex [["it's" '"']]).to_be [[STRING:"it's"@1 WHITESPACE: @1 STRING:'"'@1]]
+  - it has the escapes in it, and a backslash then a new line: |
+      expect(lex '"a\\"b" \'c\\\\\' "d\\\ne"').
+         to_be [[STRING:"a\"b"@1 WHITESPACE: @1 STRING:'c\\'@1 WHITESPACE: @1 STRING:"d\\ne"@1]]
+
+  - it is the rest of the line if it is not closed, as the apostrophe of a directive is: |
+      expect(lex "#error can't build\nx").
+         to_be "PUNCTUATION:#@1 IDENTIFIER:error@1 WHITESPACE: @1 IDENTIFIER:can@1 STRING:'t build@1 WHITESPACE:\\n@1 IDENTIFIER:x@2"
+
+
+- describe comment:
+  - it is in /* */, and can have lines in it: |
+      expect(lex 'a/* b\nc */d').to_be 'IDENTIFIER:a@1 COMMENT:/* b\\nc */@1 IDENTIFIER:d@2'
+  - it is from // to the end of the line, which is not in it: |
+      expect(lex 'a // b\nc').to_be 'IDENTIFIER:a@1 WHITESPACE: @1 COMMENT:// b@1 WHITESPACE:\\n@1 IDENTIFIER:c@2'
+  - it goes on after a backslash at the end of a line, with blanks or a return after it: |
+      expect(lex '// a \\\n b\nc').to_be 'COMMENT:// a \\\\n b@1 WHITESPACE:\\n@2 IDENTIFIER:c@3'
+      expect(lex '// a \\ \r\n b\nc').to_be 'COMMENT:// a \\ \r\\n b@1 WHITESPACE:\\n@2 IDENTIFIER:c@3'
+  - it is not closed by the end of the source, if it has /*: |
+      expect(Lexer('a /* b', 'x.c'):tokens()).to_raise 'x.c:1: unfinished comment'
+  - it is not a slash that has other text after it: |
+      expect(lex 'a / b /= c').
+         to_be 'IDENTIFIER:a@1 WHITESPACE: @1 PUNCTUATION:/@1 WHITESPACE: @1 IDENTIFIER:b@1 WHITESPACE: @1 PUNCTUATION:/=@1 WHITESPACE: @1 IDENTIFIER:c@1'
+
+
+- describe angle:
+  - it is the name of a header after an include, with a // or a /* in its path: |
+      expect(lex '#include <sys//a/*b.h>\nx').
+         to_be 'PUNCTUATION:#@1 IDENTIFIER:include@1 WHITESPACE: @1 STRING:<sys//a/*b.h>@1 WHITESPACE:\\n@1 IDENTIFIER:x@2'
+  - it is after include_next and import too, and a space after the hash: |
+      expect(lex '#  include_next <a.h>').
+         to_be 'PUNCTUATION:#@1 WHITESPACE:  @1 IDENTIFIER:include_next@1 WHITESPACE: @1 STRING:<a.h>@1'
+      expect(lex '#import <b.h>').to_be 'PUNCTUATION:#@1 IDENTIFIER:import@1 WHITESPACE: @1 STRING:<b.h>@1'
+  - it is only after an include that starts a line: |
+      expect(lex 'a < b > c').
+         to_be 'IDENTIFIER:a@1 WHITESPACE: @1 PUNCTUATION:<@1 WHITESPACE: @1 IDENTIFIER:b@1 WHITESPACE: @1 PUNCTUATION:>@1 WHITESPACE: @1 IDENTIFIER:c@1'
+      expect(lex '#define A <b>').
+         to_be 'PUNCTUATION:#@1 IDENTIFIER:define@1 WHITESPACE: @1 IDENTIFIER:A@1 WHITESPACE: @1 PUNCTUATION:<@1 IDENTIFIER:b@1 PUNCTUATION:>@1'
+      expect(lex 'x #include <b>').
+         to_be 'IDENTIFIER:x@1 WHITESPACE: @1 PUNCTUATION:#@1 IDENTIFIER:include@1 WHITESPACE: @1 PUNCTUATION:<@1 IDENTIFIER:b@1 PUNCTUATION:>@1'
+  - it is not a header name that is not closed on its line: |
+      expect(lex '#include <a\n>').
+         to_be 'PUNCTUATION:#@1 IDENTIFIER:include@1 WHITESPACE: @1 PUNCTUATION:<@1 IDENTIFIER:a@1 WHITESPACE:\\n@1 PUNCTUATION:>@2'
+  - it is the one name that follows the include, and the next line is read as any is: |
+      expect(lex '#include <a.h>\nb < c').
+         to_be 'PUNCTUATION:#@1 IDENTIFIER:include@1 WHITESPACE: @1 STRING:<a.h>@1 WHITESPACE:\\n@1 IDENTIFIER:b@2 WHITESPACE: @2 PUNCTUATION:<@2 WHITESPACE: @2 IDENTIFIER:c@2'
+
+
+- describe punctuation:
+  - it is an operator of one, two or three characters, as long as there is one: |
+      expect(lex 'a<<=b->c++...').
+         to_be 'IDENTIFIER:a@1 PUNCTUATION:<<=@1 IDENTIFIER:b@1 PUNCTUATION:->@1 IDENTIFIER:c@1 PUNCTUATION:++@1 PUNCTUATION:...@1'
+  - it is a character that is not part of any other token: |
+      expect(lex '#@$').to_be 'PUNCTUATION:#@1 PUNCTUATION:@@1 PUNCTUATION:$@1'
+  - it is each of a run of brackets and separators: |
+      expect(lex '(){};,').to_be 'PUNCTUATION:(@1 PUNCTUATION:)@1 PUNCTUATION:{@1 PUNCTUATION:}@1 PUNCTUATION:;@1 PUNCTUATION:,@1'
+
+
+- describe token:
+  - it is nil at the end of the source: |
+      l = Lexer 'x'
+      expect(l:token()[2]).to_be 'x'
+      expect(l:token()).to_be(nil)
