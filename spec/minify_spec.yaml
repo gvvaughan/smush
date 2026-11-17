@@ -1,0 +1,98 @@
+# Smush the source, Luke!
+# Copyright (C) 2026 Gary V. Vaughan
+
+before: |
+  minify = require 'smush.minify'
+  Lexer = require 'smush.lexer'.prototype
+  needspace = minify.needspace(Lexer)
+
+  -- What *text* is, as the lexer reads it, when it is minified by the
+  -- separator *make* gives, as a string.
+  function written(text, make)
+     local out = {}
+     minify.write(Lexer(text):tokens(), function(s) out[#out + 1] = s end, make(needspace))
+     return table.concat(out)
+  end
+
+  function token(kind, text, line)
+     return {kind, text, line or 1}
+  end
+
+specify smush.minify:
+- describe trivia:
+  - it is a comment or white space, and nothing else: |
+      expect(minify.trivia(token('COMMENT', '-- a'))).to_be(true)
+      expect(minify.trivia(token('WHITESPACE', ' '))).to_be(true)
+      expect(minify.trivia(token('IDENTIFIER', 'x'))).to_be(false)
+      expect(minify.trivia(token('STRING', '"a"'))).to_be(false)
+
+
+- describe linebreak and continuation:
+  - it is white space that has the end of a line in it, and not a carried line: |
+      expect(minify.linebreak(token('WHITESPACE', ' \n  '))).to_be(true)
+      expect(minify.linebreak(token('WHITESPACE', '   '))).to_be(false)
+      expect(minify.linebreak(token('COMMENT', '/* \n */'))).to_be(false)
+      expect(minify.linebreak(token('WHITESPACE', '\\\n'))).to_be(false)
+  - it is a backslash and the end of a line, as white space: |
+      expect(minify.continuation(token('WHITESPACE', '\\\n'))).to_be(true)
+      expect(minify.continuation(token('WHITESPACE', '\n'))).to_be(false)
+      expect(minify.continuation(token('PUNCTUATION', '\\'))).to_be(false)
+
+
+- describe needspace:
+  - it is true for tokens that would be read as one without a space: |
+      expect(needspace(token('IDENTIFIER', 'local'), token('IDENTIFIER', 'x'))).to_be(true)
+      expect(needspace(token('NUMBER', '1'), token('IDENTIFIER', 'x'))).to_be(true)
+      expect(needspace(token('NUMBER', '1'), token('PUNCTUATION', '.'))).to_be(true)
+  - it is true for tokens that would be read as a comment or a long string: |
+      expect(needspace(token('PUNCTUATION', '-'), token('PUNCTUATION', '-'))).to_be(true)
+      expect(needspace(token('PUNCTUATION', '['), token('STRING', '[[x]]'))).to_be(true)
+  - it answers the same for a pair that it is asked of again: |
+      local a, b = token('IDENTIFIER', 'x'), token('IDENTIFIER', 'y')
+      expect(needspace(a, b)).to_be(needspace(a, b))
+      expect(needspace(a, b)).to_be(true)
+  - it is false for tokens that stay what they are: |
+      expect(needspace(token('IDENTIFIER', 'x'), token('PUNCTUATION', '='))).to_be(false)
+      expect(needspace(token('PUNCTUATION', '.'), token('PUNCTUATION', '.'))).to_be(false)
+      expect(needspace(token('STRING', '"a"'), token('IDENTIFIER', 'b'))).to_be(false)
+
+
+- describe write:
+  - it puts the text of the tokens, with what the separator gives before each: |
+      local out = {}
+      minify.write(Lexer('a b'):tokens(), function(s) out[#out + 1] = s end,
+         function(prev, token) return token and prev and '+' or nil end)
+      expect(table.concat(out)).to_be 'a+b'
+  - it gives the separator the white space and comments that were skipped: |
+      local seen = {}
+      minify.write(Lexer('a --[[c]] b'):tokens(), function() end,
+         function(prev, token, skipped)
+            seen[#seen + 1] = token and #skipped or 'end'
+         end)
+      expect(seen).to_equal {0, 3, 'end'}
+  - it calls the separator at the end, with no token, for what to end with: |
+      local out = {}
+      minify.write(Lexer('a'):tokens(), function(s) out[#out + 1] = s end,
+         function(prev, token) return token == nil and '!' or nil end)
+      expect(table.concat(out)).to_be 'a!'
+
+
+- describe compact:
+  - it puts a space only where tokens need one: |
+      expect(written('local   x  =  1 -- one\nreturn  x', minify.compact)).to_be 'local x=1\nreturn x'
+  - it keeps a new line where the tokens needing a space were on different lines: |
+      expect(written('a\nb', minify.compact)).to_be 'a\nb'
+      expect(written('a   b', minify.compact)).to_be 'a b'
+
+
+- describe readable:
+  - it keeps the lines and the indentation, and takes out the comments: |
+      local text = '-- a\nlocal x = 1   -- b\n\n   if x then\n      f(x)  --[[c]]\n   end\n'
+      expect(written(text, minify.readable)).to_be 'local x = 1\n   if x then\n      f(x)\n   end'
+  - it puts one space for a run of white space or a comment in a line: |
+      expect(written('a    b --[[c]] d', minify.readable)).to_be 'a b d'
+  - it keeps the indentation of the first line: |
+      expect(written('   x = 1', minify.readable)).to_be '   x = 1'
+  - it puts a space only where it is needed if there was none: |
+      expect(written('a--[[c]]b', minify.readable)).to_be 'a b'
+      expect(written('x=1', minify.readable)).to_be 'x=1'

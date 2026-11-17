@@ -16,6 +16,7 @@
 
 
 local Lexer = require 'smush.lexer'.prototype
+local minify = require 'smush.minify'
 local _context = require 'std.prototype.contextmanager'
 local _std = require 'std.functional.init'
 
@@ -37,24 +38,10 @@ local _ENV = require 'std.normalize' {
    each = _std.each,
    keys = _std.keys,
    map = _std.map,
+   memoize = _std.memoize,
    reject = _std.reject,
    sorted = _std.sorted,
 }
-
-
--- Whether tokens of these kinds, with no space between them, would be
--- read as something else than the two of them.
-local WORDLIKE = {IDENTIFIER = true, NUMBER = true}
-
-local function needspace(a, b)
-   if a == nil then
-      return false
-   end
-   return (WORDLIKE[a[1]] and WORDLIKE[b[1]])             -- one word
-      or (a[2] == '-' and b[2] == '-')                    -- `--` is a comment
-      or (a[1] == 'NUMBER' and b[2] == '.')               -- `1..` is a number
-      or (a[2] == '[' and b[1] == 'STRING' and sub(b[2], 1, 1) == '[')
-end                                                       -- `[[` is a string
 
 
 -- A module name from the path of the file that holds it.
@@ -149,9 +136,8 @@ local function footer(script, entry)
    }, '\n')
 end
 
--- The tokens of *fname* that matter to the program, without its comments
--- and whitespace.
-local function significant(fname)
+-- All of the tokens of the file *fname*, read once.
+local tokenize = memoize(function(fname)
    local text, err = slurp(File(fname))
    if text == nil then
       stderr:write('smush: ', err, '\n')
@@ -164,10 +150,21 @@ local function significant(fname)
       stderr:write('smush: ', tokens, '\n')
       exit(1)
    end
-   return reject(tokens, function(token)
-      return token[1] == 'COMMENT' or token[1] == 'WHITESPACE'
-   end)
-end
+   return tokens
+end)
+
+
+-- The tokens of the file *fname* that matter to the program, without its
+-- comments and whitespace, made once.
+local significant = memoize(function(fname)
+   return reject(tokenize(fname), minify.trivia)
+end)
+
+-- Whether two tokens need a space between them, and the separators that put
+-- the tokens of a source in a bundle: compact, or readable.
+local needspace = minify.needspace(Lexer)
+local separators = {[false] = minify.compact, [true] = minify.readable}
+
 
 -- The manifests of LuaRocks trees that rockof has read, by file.
 local manifests = {}
@@ -209,20 +206,6 @@ local function bundled_module(rocks)
       concat(map(rocks, function(rock) return rock .. '\n' end))
    return "bundled['smush.bundled']=function()return{showbundled=function(write)(write or io.write)(" ..
       format('%q', text) .. ')end}end'
-end
-
-
--- Put *tokens* in *put* with whitespace strategically injected back into the
--- stream.
-local function minify(tokens, put)
-   local line, prev = 1
-   each(tokens, function(token)
-      if needspace(prev, token) then
-         put(line < token[3] and '\n' or ' ')
-      end
-      put(tostring(token[2]))
-      prev, line = token, token[3]
-   end)
 end
 
 
@@ -271,6 +254,8 @@ have a copy of one file share the one.
   --module=NAME    write a module that returns the bundled module NAME
   --external=NAME  the host provides the module NAME to the bundle, which
                    asks the host's `require` for it when it needs it
+  --readable       keep the lines and the indentation of each SOURCE, taking
+                   out only comments, blank lines and wasted white space
   --help           show this help, and exit
   --version        show the version, and exit
   --bundled        list the rocks bundled in smush, and exit
@@ -289,6 +274,7 @@ have a copy of one file share the one.
 local function main(args)
    local script, entry, sources, known, externals = true, nil, {}, {}, {}
    local aliases = {}
+   local readable = false
    local i = 1
    while i <= len(args) do
       local a = args[i]
@@ -311,6 +297,8 @@ local function main(args)
       elseif k == 'external' then
          known[v] = true
          externals[#externals + 1] = v
+      elseif a == '--readable' then
+         readable = true
       elseif a == '--help' then
          write(USAGE)
          exit(0)
@@ -343,10 +331,10 @@ local function main(args)
       exit(1)
    end
 
-   local tokens, rocks, seen = {}, {}, {}
+   local rocks, seen = {}, {}
    each(sources, function(a)
       local name, fname = source(a)
-      known[name], tokens[name] = true, significant(fname)
+      known[name] = true
       local rock = rockof(fname)
       if rock ~= nil and not seen[rock] then
          seen[rock] = true
@@ -373,11 +361,11 @@ local function main(args)
    put(header(script, sorted(externals)) .. '\n')
 
    each(sources, function(a)
-      local name = source(a)
+      local name, fname = source(a)
       put("bundled['" .. name .. "']=function()\n")
-      minify(tokens[name], put)
+      minify.write(tokenize(fname), put, separators[readable](needspace))
       put '\nend\n'
-      each(unbundled(tokens[name], known), function(missing)
+      each(unbundled(significant(fname), known), function(missing)
          stderr:write('smush: warning: ', name, " names the module '", missing,
             "', which is in the Lua path, but is not bundled\n")
       end)

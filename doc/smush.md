@@ -57,6 +57,9 @@ An option that takes a value is written `--NAME=VALUE` or `--NAME VALUE`.
   * `--module=NAME` writes a module that returns the bundled module NAME;
   * `--external=NAME` says that the host provides the module NAME to the
     bundle (see [External Modules](#5-external-modules));
+  * `--readable` keeps the lines and the indentation of each SOURCE, and
+    takes out only its comments, its blank lines and the white space that
+    is not needed, so that the bundle can be read;
   * `--help` shows how to use smush, and exits;
   * `--version` shows which version of smush it is, and exits;
   * `--bundled` says which version of smush it is, and lists the rocks

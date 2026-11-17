@@ -2,6 +2,12 @@
 
 ## Noteworthy changes in release ?.? (????-??-??) [?]
 
+### New features
+
+  - `smush --readable` keeps the lines and the indentation of the modules
+    that it bundles, and takes out only their comments, their blank lines
+    and the white space that is not needed, so that the bundle can be read.
+
 
 ## Noteworthy changes in release 0.4 (2026-10-29) [stable]
 

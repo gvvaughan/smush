@@ -51,6 +51,7 @@ if _MODREV == 'dev' then
    local bundled = {
       'lib/smush/init.lua',
       'lib/smush/lexer.lua',
+      'lib/smush/minify.lua',
       'lib/smush/version.lua.in',
       'std.functional._base',
       'std.functional.init',

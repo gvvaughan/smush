@@ -45,6 +45,18 @@ specify smush:
   - after: |
       os.execute('rm -rf ' .. tmpdir)
 
+  - it keeps the lines and the indentation with --readable, and takes out only what is wasted: |
+      spit(tmpdir .. '/readable.lua', "-- A module.\nlocal M = {}   -- the table\n\n--[[ long\ncomment ]]\n" ..
+         "function M.f(a,   b)\n   -- greet\n   if a then      -- test\n      return a +   b\n   end\nend\n\nreturn M\n")
+      p = smush(tmpdir, '--main=readable', '--readable', 'readable')
+      expect(p).to_succeed_while_containing("bundled['readable']=function()\nlocal M = {}\n" ..
+         "function M.f(a, b)\n   if a then\n      return a + b\n   end\nend\nreturn M\nend\n")
+
+  - it keeps the space between tokens that a comment separated, with --readable: |
+      spit(tmpdir .. '/comments.lua', "return 1--[[x]]-1\n")
+      p = smush(tmpdir, '--main=comments', '--readable', 'comments')
+      expect(p).to_succeed_while_containing "bundled['comments']=function()\nreturn 1 -1\nend\n"
+
   - it finds the modules by name in the Lua path: |
       p = smush(tmpdir, '--module=one', 'one', 'two')
       expect(p).to_succeed_while_containing "bundled['one']=function()"
