@@ -21,7 +21,30 @@
  and then SIZE bytes of data and a newline.  The last line is the
  length of everything from the magic line to there, in 15 digits.
 
- `host/barf.c` reads a barf in C, and this module writes one, and
+ A barf can be indexed, with `!<barx>` as its magic line.  Its first
+ entry is `index`, a Lua list of `{path, offset, size, mode}`, where
+ offset is that of the data from the end of the index, and each of the
+ other entries is named by its number.  The index is the only place that
+ has the paths, and the data of any entry is found without a walk
+ through the headers before it.  For the entries above it is:
+
+    !<barx>
+    63 644 index
+    return {
+    {"hello.txt", 8, 6, 420},
+    {"bin/run", 24, 17, 493},
+    }
+
+    6 644 1
+    Hello!
+    17 755 2
+    #!/bin/sh
+    echo hi
+    000000000000127
+
+ `unpack` gives the entries with their paths, as for any barf.
+
+ `host/barfx.c` reads a barf in C, and this module writes one, and
  reads one for the specs to check it by.
 
  @module smush.barf
@@ -45,7 +68,6 @@ local _ENV = require 'std.normalize' {
    id = _std.id,
    isstring = _std.isstring,
    iter = _std.iter,
-   merged = _std.merged,
 }
 
 
@@ -53,6 +75,8 @@ local MAGIC = '!<barf>\n'
 local TRAILER = 16
 local LENGTH = '^(' .. rep('%d', 15) .. ')\n$'
 local DEFAULT_MODE = tonumber('644', 8)
+local INDEXED = '!<barx>\n'
+local INDEX = 'index'
 
 
 -- A function that returns nil and the message that `format` makes.
@@ -107,17 +131,54 @@ local function entry_problem(entry, seen)
 end
 
 
--- The state of `pack` with *entry* in it, the *i*th.
+-- The header line of *entry*, named *name*, or by its path.
+local function header_of(entry, name)
+   return format('%d %o %s\n', #entry.data, entry.mode or DEFAULT_MODE,
+                 name or entry.path)
+end
+
+
+-- The state of `pack` with *entry* in it, the *i*th.  The state is
+-- changed in place: a copy of it for each entry would take time as the
+-- square of the number of entries.
 local function packed(state, i, entry)
    choose(entry_problem(entry, state.seen), function(problem)
       error(format('entry %d: %s', i, problem), 0)
    end)
-   local header = format('%d %o %s\n', #entry.data,
-                         entry.mode or DEFAULT_MODE, entry.path)
-   return {
-      parts = flatten {state.parts, header, entry.data, '\n'},
-      seen = merged(state.seen, {[entry.path] = true}),
-   }
+   local parts = state.parts
+   parts[#parts + 1] = header_of(entry, state.numbered and tostring(i))
+   parts[#parts + 1] = entry.data
+   parts[#parts + 1] = '\n'
+   state.seen[entry.path] = true
+   return state
+end
+
+
+-- The state of `index_text` with the row of *entry* in it, changed in
+-- place.
+local function indexed(state, i, entry)
+   local header = header_of(entry, tostring(i))
+   local at = state.pos + #header
+   local rows = state.rows
+   rows[#rows + 1] = format('{%q, %d, %d, %d},\n', entry.path, at,
+                            #entry.data, entry.mode or DEFAULT_MODE)
+   return {pos = at + #entry.data + 1, rows = rows}
+end
+
+
+-- The text of the index of *entries*: a Lua list of rows `{path,
+-- offset, size, mode}`, in the order of the barf.  Each offset is that
+-- of the data of the entry, from the end of the entry of the index.
+local function index_text(entries)
+   local state = foldl(iter(ipairs(entries)),
+                       {pos = 0, rows = {}}, indexed)
+   return concat(flatten {'return {\n', state.rows, '}\n'})
+end
+
+
+-- The bytes of *entry*, named *name*.
+local function entry_bytes(entry, name)
+   return header_of(entry, name) .. entry.data .. '\n'
 end
 
 
@@ -125,11 +186,19 @@ end
 -- @tparam table entries a list of `{path=, data=, mode=}`, in order;
 --    `mode` is a number (`tonumber('755', 8)`) and is 420 (octal 644)
 --    if left out
+-- @tparam[opt] table opts `index`, true to number the entries and keep
+--    their paths in an index
 -- @treturn string the barf, with its trailer
-local function pack(entries)
+local function pack(entries, opts)
+   local numbered = opts and opts.index
    local state = foldl(iter(ipairs(entries)),
-                       {parts = {MAGIC}, seen = {}}, packed)
-   local barf = concat(state.parts)
+                       {numbered = numbered, parts = {}, seen = {}},
+                       packed)
+   local index = choose(numbered, function()
+      return entry_bytes({data = index_text(entries)}, INDEX)
+   end, '')
+   local barf = choose(numbered, INDEXED, MAGIC) .. index
+      .. concat(state.parts)
    return barf .. format('%015d\n', #barf)
 end
 
@@ -157,10 +226,82 @@ local function read_entries(bytes, pos, last, seen, entries)
             data = sub(bytes, first, data_end - 1),
             mode = tonumber(mode, 8),
          }
-         return read_entries(bytes, data_end + 1, last,
-                             merged(seen, {[path] = true}),
-                             merged(entries, {[#entries + 1] = entry}))
+         seen[path] = true
+         entries[#entries + 1] = entry
+         return read_entries(bytes, data_end + 1, last, seen, entries)
       end}
+   )
+end
+
+
+-- The state of `resolve` with the entry that the row *i* of the index
+-- names.
+local function named(state, i, row)
+   local raw = state.raw[i + 1]
+   local path = type(row) == 'table' and row[1]
+   local problem = state.problem or cond(
+      {not raw or raw.path ~= tostring(i), function()
+         return format('entry %d is not named', i)
+      end},
+      {path_problem(path), function(why)
+         return format('path %q %s', tostring(path), why)
+      end},
+      {state.seen[tostring(path)], function()
+         return format('path %q is there twice', path)
+      end}
+   )
+   state.problem = problem
+   state.seen[tostring(path)] = true
+   state.entries[#state.entries + 1] = {
+      path = path, data = raw and raw.data, mode = raw and raw.mode,
+   }
+   return state
+end
+
+
+-- The entries that the index, the first of *raw*, names, which are the
+-- others, numbered; or nil and why not.
+local function resolve(raw)
+   local text = raw[1] and raw[1].data or ''
+   local chunk, why = load(text, '=index', 't', {})
+   return cond(
+      {not raw[1] or raw[1].path ~= INDEX, failing 'no index'},
+      {not chunk, failing('bad index: %s', why)},
+      {true, function()
+         local ok, rows = pcall(chunk)
+         local list = choose(ok and type(rows) == 'table', rows, {})
+         local state = foldl(iter(ipairs(list)),
+                             {raw = raw, seen = {}, entries = {}},
+                             named)
+         return cond(
+            {not ok or type(rows) ~= 'table', failing 'bad index'},
+            {type(rows) == 'table' and #rows ~= #raw - 1,
+               failing 'the index does not name the entries'},
+            {state.problem, failing('%s', state.problem)},
+            {true, state.entries}
+         )
+      end}
+   )
+end
+
+
+-- The entries of the barf that has its magic line at *start* in
+-- *bytes*, and ends at *last*; or nil and why not.
+local function read_barf(bytes, start, last)
+   local magic = sub(bytes, start, start + #MAGIC - 1)
+   local function entries()
+      return read_entries(bytes, start + #MAGIC, last, {}, {})
+   end
+   return cond(
+      {magic == MAGIC, entries},
+      {magic == INDEXED, function()
+         local raw, why = entries()
+         return cond(
+            {not raw, failing('%s', why)},
+            {true, function() return resolve(raw) end}
+         )
+      end},
+      {true, failing 'no magic'}
    )
 end
 
@@ -181,8 +322,8 @@ local function unpack(bytes)
       and sub(bytes, start, start + #MAGIC - 1)
    return cond(
       {not length, failing 'no trailer'},
-      {magic == MAGIC, function()
-         return read_entries(bytes, start + #MAGIC, last, {}, {})
+      {magic == MAGIC or magic == INDEXED, function()
+         return read_barf(bytes, start, last)
       end},
       {true, failing 'no magic'}
    )

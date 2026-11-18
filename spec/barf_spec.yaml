@@ -62,6 +62,65 @@ specify smush.barf:
   - it refuses an entry that has no data:
       expect(barf.pack {{path = 'x'}}).to_raise 'no data'
 
+- describe pack with index:
+  - it names the entries by number, and has their paths in the index: |
+      local bytes = barf.pack(entries, {index = true})
+      expect(bytes:sub(1, 8)).to_be '!<barx>\n'
+      expect(bytes).to_contain '\n11 644 1\nprint "hi"\n\n7 644 2\n'
+      expect(bytes).not_to_contain ' main.lua\n'
+
+  - it gives the paths back with unpack, and the data and the mode: |
+      local list = assert(barf.unpack(barf.pack(entries, {index = true})))
+      expect(#list).to_be(#entries)
+      for i, entry in ipairs(entries) do
+         expect(list[i].path).to_be(entry.path)
+         expect(list[i].data).to_be(entry.data)
+         expect(list[i].mode).to_be(entry.mode or tonumber('644', 8))
+      end
+
+  - it gives the offset of the data from the end of the index: |
+      local bytes = barf.pack(entries, {index = true})
+      local _, header = bytes:find('^!<barx>\n%d+ %d+ index\n')
+      local size = tonumber(bytes:match '^!<barx>\n(%d+) ')
+      local base = header + size + 1
+      local rows = load(bytes:sub(header + 1, header + size), '=index',
+                        't', {})()
+      expect(#rows).to_be(#entries)
+      for i, row in ipairs(rows) do
+         expect(row[1]).to_be(entries[i].path)
+         expect(row[3]).to_be(#entries[i].data)
+         expect(bytes:sub(base + row[2] + 1, base + row[2] + row[3])).
+            to_be(entries[i].data)
+      end
+
+  - it is read when it is compressed too: |
+      local bytes = barf.pack(entries, {index = true, compress = true})
+      local list = assert(barf.unpack(bytes))
+      expect(list[#list].path).to_be(entries[#entries].path)
+
+  - it makes no index unless it is asked for:
+      expect(barf.pack(entries):sub(1, 8)).to_be '!<barf>\n'
+
+  - it refuses an entry that has no data before it makes the index:
+      expect(barf.pack({{path = 'x'}}, {index = true})).
+         to_raise 'no data'
+
+  - it refuses a barf with no index, or an index that is not good: |
+      local function indexed(index, rest)
+         local body = '!<barx>\n' .. #index .. ' 644 index\n' .. index ..
+            '\n' .. rest
+         return select(2, barf.unpack(seal(body)))
+      end
+      expect(select(2, barf.unpack(seal '!<barx>\n1 644 1\na\n'))).
+         to_contain 'no index'
+      expect(indexed('return {', '')).to_contain 'bad index'
+      expect(indexed('return {}', '1 644 1\na\n')).
+         to_contain 'does not name'
+      expect(indexed('return {{"../x", 0, 1, 420}}', '1 644 1\na\n')).
+         to_contain 'has a ".." component'
+      expect(indexed('return {{"x", 0, 1, 420}}', '1 644 2\na\n')).
+         to_contain 'is not named'
+
 - describe unpack:
   - it reads what pack wrote:
       local got = assert(barf.unpack(barf.pack(entries)))
