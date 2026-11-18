@@ -30,6 +30,9 @@ return {
   -- the .lua extension, path separator is always '/')
   ["include"] = {
     "lib/smush/init$",
+    "lib/smush/minify$",
+    "lib/smush/clexer$",
+    "lib/smush/c$",
     "lib/smush/lexer$",
   },
 
