@@ -62,10 +62,19 @@ specify smush.barf:
   - it refuses an entry that has no data:
       expect(barf.pack {{path = 'x'}}).to_raise 'no data'
 
+- describe pack with compress:
+  - it writes a different magic line, and shrinks repeated data: |
+      local many = {{path = 'x', data = ('some words, '):rep(500)}}
+      local plain = barf.pack(many)
+      local packed = barf.pack(many, {compress = true})
+      expect(packed:sub(1, 9)).to_be '!<barfz>\n'
+      expect(#packed < #plain / 5).to_be(true)
+      expect(#packed - 16).to_be(tonumber(packed:sub(-16, -2)))
+
 - describe pack with index:
   - it names the entries by number, and has their paths in the index: |
       local bytes = barf.pack(entries, {index = true})
-      expect(bytes:sub(1, 8)).to_be '!<barx>\n'
+      expect(bytes:sub(1, 9)).to_be '!<barfx>\n'
       expect(bytes).to_contain '\n11 1\nprint "hi"\n\n7 2\n'
       expect(bytes).not_to_contain ' main.lua\n'
 
@@ -79,8 +88,8 @@ specify smush.barf:
 
   - it gives the offset of the data from the end of the index: |
       local bytes = barf.pack(entries, {index = true})
-      local _, header = bytes:find('^!<barx>\n%d+ index\n')
-      local size = tonumber(bytes:match '^!<barx>\n(%d+) ')
+      local _, header = bytes:find('^!<barfx>\n%d+ index\n')
+      local size = tonumber(bytes:match '^!<barfx>\n(%d+) ')
       local base = header + size + 1
       local rows = load(bytes:sub(header + 1, header + size), '=index',
                         't', {})()

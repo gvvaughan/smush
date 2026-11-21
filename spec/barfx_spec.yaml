@@ -33,6 +33,41 @@ specify barfx:
     expect(status).to_be(0)
     expect(listing).to_be 'abc'
 
+- it unpacks a compressed barf as it does a plain one, of data that repeats and data that does not:
+    local words = ('some words, '):rep(5000)
+    math.randomseed(7)
+    local noise = {}
+    for i = 1, 3000 do noise[i] = string.char(math.random(0, 255)) end
+    local big = {
+       {path = 'words', data = words},
+       {path = 'noise', data = table.concat(noise) .. words:sub(1, 300)},
+       {path = 'empty', data = ''},
+       {path = 'run', data = ('a'):rep(70000)},
+    }
+    local inspect = 'cksum words noise empty run'
+    local plain, status = unpacked(barf.pack(big), inspect)
+    local packed, zstatus = unpacked(barf.pack(big, {compress = true}), inspect)
+    expect({status, zstatus}).to_equal {0, 0}
+    expect(packed).to_be(plain)
+
+- it refuses a compressed barf that is broken:
+    local packed = barf.pack(entries, {compress = true}):sub(1, -17)
+    for _, bad in ipairs {
+       packed:sub(1, 30),
+       packed:sub(1, 9) .. ('%015d\n'):format(3) .. packed:sub(26),
+       packed:sub(1, 9) .. 'not a number   \n' .. packed:sub(26),
+    } do
+       local listing, status, err = unpacked(
+          bad .. ('%015d\n'):format(#bad), 'ls')
+       expect(status).to_be(1)
+       expect(err).to_match '^barfx:'
+       expect(listing).to_be ''
+    end
+
+- it unpacks an empty barf:
+    local listing, status = unpacked(barf.pack {}, 'ls')
+    expect({listing, status}).to_equal {'', 0}
+
 - it refuses a barf that it cannot trust:
     for _, bad in ipairs {
        sealed('3 ../x\nabc\n'),

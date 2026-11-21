@@ -87,7 +87,7 @@ function unbarf(bytes)
    end
    local last = #bytes - 16
    local pos = last - length + 1
-   local magic = bytes:match('^(!<bar%a>)\n', pos)
+   local magic = bytes:match('^(!<bar%a+>)\n', pos)
    if not magic then
       return nil, 'no magic'
    end
@@ -102,7 +102,7 @@ function unbarf(bytes)
       }
       pos = data + size + 1
    end
-   if magic == '!<barx>' then
+   if magic == '!<barfx>' then
       local text = table.remove(entries, 1).data
       local index = load(text, '=index', 't', {})()
       for i, row in ipairs(index) do

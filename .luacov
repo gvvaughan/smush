@@ -35,6 +35,7 @@ return {
     "lib/smush/clexer$",
     "lib/smush/c$",
     "lib/smush/lexer$",
+    "lib/smush/lz4$",
   },
 
   -- Patterns for files to exclude when reporting

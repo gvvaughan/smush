@@ -21,14 +21,14 @@
  and then SIZE bytes of data and a newline.  The last line is the
  length of everything from the magic line to there, in 15 digits.
 
- A barf can be indexed, with `!<barx>` as its magic line.  Its first
+ A barf can be indexed, with `!<barfx>` as its magic line.  Its first
  entry is `index`, a Lua list of `{path, offset, size}`, where
  offset is that of the data from the end of the index, and each of the
  other entries is named by its number.  The index is the only place that
  has the paths, and the data of any entry is found without a walk
  through the headers before it.  For the entries above it is:
 
-    !<barx>
+    !<barfx>
     53 index
     return {
     {"hello.txt", 4, 6},
@@ -42,11 +42,18 @@
     echo hi
     000000000000105
 
+ A compressed barf starts with `!<barfz>` instead.  The next line is
+ the uncompressed length of the barf, in 15 digits.  Then comes the
+ whole barf, without its last line, as one block of the LZ4 format
+ (see `smush.lz4`).  The last line is the length of everything from
+ the magic line to there, as for any barf.
+
  This module only writes a barf.
 
  @module smush.barf
 ]]
 
+local lz4 = require 'smush.lz4'
 local _std = require 'std.functional.init'
 
 local _ENV = require 'std.normalize' {
@@ -67,7 +74,8 @@ local _ENV = require 'std.normalize' {
 
 
 local MAGIC = '!<barf>\n'
-local INDEXED = '!<barx>\n'
+local COMPRESSED = '!<barfz>\n'
+local INDEXED = '!<barfx>\n'
 local INDEX = 'index'
 
 
@@ -166,8 +174,9 @@ end
 
 --- Make the bytes of a barf.
 -- @tparam table entries a list of `{path=, data=}`, in order
--- @tparam[opt] table opts `index`, true to number the entries and keep
---    their paths in an index
+-- @tparam[opt] table opts `compress`, true to compress the whole barf;
+--    `index`, true to number the entries and keep their paths in an
+--    index
 -- @treturn string the barf, with its trailer
 local function pack(entries, opts)
    local numbered = opts and opts.index
@@ -179,7 +188,10 @@ local function pack(entries, opts)
    end, '')
    local barf = choose(numbered, INDEXED, MAGIC) .. index
       .. concat(state.parts)
-   return barf .. format('%015d\n', #barf)
+   local body = choose(opts and opts.compress, function()
+      return COMPRESSED .. format('%015d\n', #barf) .. lz4.compress(barf)
+   end, barf)
+   return body .. format('%015d\n', #body)
 end
 
 

@@ -6,7 +6,8 @@
  * directory.
  *
  * It needs nothing but a C compiler, so that a first run can build it
- * and unpack the rest of what it needs.  It reads a plain `!<barf>`.
+ * and unpack the rest of what it needs.  It reads a plain `!<barf>`,
+ * or a compressed `!<barfz>`.
  *
  * A barf is a list of files.  It is found from the end of the file, so
  * it can follow a script or a program (see lib/smush/barf.lua):
@@ -19,13 +20,23 @@
  *     echo hi
  *     000000000000056
  *
- * Each header is SIZE PATH, with SIZE in decimal.  The last line holds
- * the length of everything before it, in 15 digits.
+ * A header is SIZE PATH, with SIZE in decimal.
+ * The last line gives the length of everything before it, in 15 digits.
+ *
+ * A compressed barf starts with !<barfz> instead.  Next come the
+ * uncompressed length of the barf, then the barf itself (its magic line
+ * and entries, without the last line) as one LZ4 block, and finally the
+ * last line, with the length of all of it:
+ *
+ *     !<barfz>
+ *     UUUUUUUUUUUUUUU
+ *     the block
+ *     LLLLLLLLLLLLLLL
  *
  * A barf is untrusted input, because the file might come from anyone.
- * Every length is checked against the bytes that remain, every path
- * must stay below the current directory (no absolute paths, `..` or
- * empty components).
+ * Every length is checked against what is left, a path must stay below
+ * the current directory (no absolute paths, `..` or empty components),
+ * and decompression never reads or writes outside its buffers.
  *
  * fseeko needs the POSIX feature macros on some systems, so
  * a build can put `-D_POSIX_C_SOURCE=200809L` in CPPFLAGS.
@@ -125,16 +136,84 @@ parents(char *p)
 }
 
 
+/* 0 if S starts with 15 digits, or else -1. */
+static int
+number(const unsigned char *s)
+{
+    int i;
+
+    for (i = 0; i < 15; i++)
+        if (s[i] < '0' || s[i] > '9')
+            return -1;
+    return 0;
+}
+
+
+/* Decompress the N bytes of the block S into the M bytes of D, which it
+ * must fill exactly.  A block is a run of sequences.  Each starts with
+ * a token: its high four bits are the number of literal bytes, and its
+ * low four bits the length of the copy, less four.  The literals
+ * follow.  Every sequence but the last then has two bytes (low byte
+ * first) of how far back the copy starts.  A count of 15 in the token
+ * continues in the next bytes, each added to it, up to the first byte
+ * that is not 255: right after the token for the literals, and after
+ * the offset for the copy.  A copy can overlap the bytes it writes, so
+ * it goes one byte at a time.  Nothing is read or written outside S and
+ * D.  Returns 0 for a good block, or else -1.
+ */
+static int
+unlz4(const unsigned char *s, size_t n, unsigned char *d, size_t m)
+{
+    const unsigned char *e = s + n;
+    unsigned char *o = d, *oe = d + m;
+    size_t l, k;
+    unsigned t;
+
+    while (s < e) {
+        t = *s++;
+        l = t >> 4;
+        if (l == 15)
+            do {
+                if (s == e)
+                    return -1;
+                l += *s;
+            } while (*s++ == 255);
+        if ((size_t) (e - s) < l || (size_t) (oe - o) < l)
+            return -1;
+        memcpy(o, s, l);
+        o += l;
+        s += l;
+        if (s == e)
+            break;
+        if (e - s < 2)
+            return -1;
+        k = s[0] | s[1] << 8;
+        s += 2;
+        l = t & 15;
+        if (l == 15)
+            do {
+                if (s == e)
+                    return -1;
+                l += *s;
+            } while (*s++ == 255);
+        l += 4;
+        if (k == 0 || k > (size_t) (o - d) || (size_t) (oe - o) < l)
+            return -1;
+        for (; l; l--, o++)
+            *o = *(o - k);
+    }
+    return o == oe ? 0 : -1;
+}
+
+
 int
 main(int argc, char **argv)
 {
-    static char line[8192], buf[65536];
-    char tail[16], *e;
+    unsigned char *body = NULL;
+    char tail[16], *p, *stop, *nl, *e, *data;
     FILE *in, *out;
-    off_t end, length, left;
-    unsigned long size;
-    size_t i, n;
-    int c;
+    off_t end;
+    unsigned long size, length, i;
 
     if (argc != 2)
         argfatal("usage: barfx FILE");
@@ -143,56 +222,59 @@ main(int argc, char **argv)
 
     /* The trailer: the length of the barf, 15 digits and a newline. */
     if (fseeko(in, -16, SEEK_END) || (end = ftello(in)) < 0 ||
-        fread(tail, 1, 16, in) != 16 || tail[15] != '\n')
+        fread(tail, 1, 16, in) != 16 || tail[15] != '\n' ||
+        number((unsigned char *) tail))
         fatal("no trailer");
-    for (length = 0, i = 0; i < 15; i++) {
-        if (tail[i] < '0' || tail[i] > '9')
-            fatal("bad trailer");
+    for (length = 0, i = 0; i < 15; i++)
         length = length * 10 + tail[i] - '0';
-    }
 
-    /* The barf starts LENGTH bytes before the trailer, with its magic
-       line. */
-    if (length < 8 || length > end || fseeko(in, end - length,
-                                             SEEK_SET) ||
-        !fgets(line, sizeof line, in) || strcmp(line, "!<barf>\n"))
+    /* The barf starts that far before the trailer.  Read all of it. */
+    if (length < 8 || length > (unsigned long) end ||
+        fseeko(in, end - (off_t) length, SEEK_SET) ||
+        !(body = malloc(length)) || fread(body, 1, length,
+                                          in) != length)
         fatal("not a barf");
 
-    /* LEFT is how much of the barf is still to read. */
-    for (left = length - 8; left > 0;) {
-        /* Read the header, SIZE PATH, one byte at a time, so that
-           reading stops at its newline and goes no further. */
-        for (n = 0; (c = getc(in)) != '\n'; )
-            if (c == EOF || c == 0 || n == sizeof line - 1)
-                fatal("bad header");
-            else
-                line[n++] = c;
-        line[n] = 0;
-        left -= (off_t) (n + 1);
+    /* Decompress a compressed barf into a new buffer, whose size is
+       the 15 digits after its magic line. */
+    if (length >= 9 && !memcmp(body, "!<barfz>\n", 9)) {
+        if (length < 25 || body[24] != '\n' || number(body + 9))
+            fatal("bad compressed barf");
+        for (size = 0, i = 9; i < 24; i++)
+            size = size * 10 + body[i] - '0';
+        p = (char *) body;
+        if (size < 8 || !(body = malloc(size)) ||
+            unlz4((unsigned char *) p + 25, length - 25, body, size))
+            fatal("bad compressed barf");
+        length = size;
+    }
+    if (memcmp(body, "!<barf>\n", 8))
+        fatal("not a barf");
 
-        e = line;
+    /* Walk the entries, from after the magic line to the end. */
+    for (p = (char *) body + 8, stop = (char *) body + length; p < stop;
+         p = data + size + 1) {
+        /* The header: SIZE PATH, ended by the first newline. */
+        if (!(nl = memchr(p, '\n', stop - p)) || memchr(p, 0, nl - p))
+            fatal("bad header");
+        *nl = 0;
+        data = nl + 1;
+
+        e = p;
         if (!digits(&e, 10, &size) || *e != ' ')
             fatal("bad header");
 
         /* The data and its trailing newline must fit in the rest of the
            barf. */
-        if (!path_ok(e + 1) || left < 0 ||
-            size >= (unsigned long) left)
+        if (!path_ok(e + 1) ||
+            size >= (unsigned long) (stop - data) || data[size] != '\n')
             fatal("bad entry");
         e++;
 
         parents(e);
-        if (!(out = fopen(e, "wb")))
+        if (!(out = fopen(e, "wb")) ||
+            fwrite(data, 1, size, out) != size || fclose(out))
             sysfatal(e);
-        for (left -= (off_t) (size + 1); size; size -= n)
-            if ((n = fread(buf, 1, size < sizeof buf ? size
-                           : sizeof buf, in)) == 0 ||
-                fwrite(buf, 1, n, out) != n)
-                sysfatal(e);
-        if (fclose(out))
-            sysfatal(e);
-        if (getc(in) != '\n')
-            fatal("bad entry");
     }
     return 0;
 }

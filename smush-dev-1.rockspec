@@ -54,6 +54,7 @@ if _MODREV == 'dev' then
       'lib/smush/clexer.lua',
       'lib/smush/init.lua',
       'lib/smush/lexer.lua',
+      'lib/smush/lz4.lua',
       'lib/smush/minify.lua',
       'lib/smush/version.lua.in',
       'std.functional._base',
