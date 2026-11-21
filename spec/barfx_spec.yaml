@@ -1,0 +1,53 @@
+# Smush the source, Luke!
+# Copyright (C) 2026 Gary V. Vaughan
+
+before:
+  barf = require 'smush.barf'
+
+  -- The barf that barfx has to read with each file it makes.
+  entries = {
+     {path = 'main.lua', data = 'print "hi"\n'},
+     {path = 'deps/lua/src/lua.h', data = 'int x;\n'},
+     {path = 'build', data = '#!/bin/sh\necho build\n'},
+     {path = 'a b/c d.txt', data = ''},
+     {path = 'bin', data = '\0\1\2\255\n\n'},
+  }
+
+  -- The body of a barf with a trailer for *entries*.
+  function sealed(...)
+     local body = '!<barf>\n' .. table.concat {...}
+     return body .. ('%015d\n'):format(#body)
+  end
+
+specify barfx:
+- it unpacks the files of a barf with their contents:
+    local listing, status = unpacked(barf.pack(entries),
+       'cat main.lua deps/lua/src/lua.h "a b/c d.txt"; od -An -tx1 bin')
+    expect(status).to_be(0)
+    expect(listing).to_match '^print "hi"\nint x;\n'
+    expect(listing).to_contain '00 01 02 ff 0a 0a'
+
+- it unpacks a barf that follows other bytes:
+    local listing, status = unpacked('\35!/bin/sh\nexit 0\n' ..
+       barf.pack {{path = 'x', data = 'abc'}}, 'cat x')
+    expect(status).to_be(0)
+    expect(listing).to_be 'abc'
+
+- it refuses a barf that it cannot trust:
+    for _, bad in ipairs {
+       sealed('3 ../x\nabc\n'),
+       sealed('3 /tmp/x\nabc\n'),
+       sealed('3 a//b\nabc\n'),
+       sealed('9 x\nabc\n'),
+       sealed('3\nabc\n'),
+    } do
+       local listing, status, err = unpacked(bad, 'ls')
+       expect(status).to_be(1)
+       expect(err).to_match '^barfx:'
+       expect(listing).to_be ''
+    end
+
+- it refuses a file that is not a barf:
+    local _, status, err = unpacked 'hello'
+    expect(status).to_be(1)
+    expect(err).to_contain 'no trailer'

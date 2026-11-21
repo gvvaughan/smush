@@ -43,6 +43,39 @@ function restore()
 end
 
 
+-- Compile host/barfx.c once for all the examples, which specl runs in
+-- one process, and return the path of the program.
+local function barfx_program()
+   local path = registry['smush.spec.barfx']
+   if not path then
+      path = os.tmpname()
+      assert(os.execute(('${CC:-cc} ${CPPFLAGS} -o %s host/barfx.c'):
+                        format(path)))
+      registry['smush.spec.barfx'] = path
+   end
+   return path
+end
+
+
+-- Unpack the barf *bytes* with barfx in a new directory, run the shell
+-- command *inspect* there, and remove the directory.  Return what
+-- *inspect* wrote, the exit status of barfx, and what barfx wrote to
+-- its stderr.
+function unpacked(bytes, inspect)
+   local dir = io.popen('mktemp -d'):read '*l'
+   local file = io.open(dir .. '.barf', 'wb')
+   file:write(bytes)
+   file:close()
+   local pipe = io.popen(([[cd %s && %s %s.barf 2>%s.err; echo $?
+      %s]]):format(dir, barfx_program(), dir, dir, inspect or ':'))
+   local status, listing = pipe:read '*l', pipe:read '*a'
+   pipe:close()
+   local err = io.open(dir .. '.err'):read '*a'
+   os.execute(('rm -rf %s %s.barf %s.err'):format(dir, dir, dir))
+   return listing, tonumber(status), err
+end
+
+
 -- The entries of the barf at the end of *bytes*, a list of `{path=,
 -- data=}` in order, with the paths from the index if there is
 -- one; or nil and why not.  This trusts what `pack` writes, and does
