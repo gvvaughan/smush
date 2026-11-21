@@ -1,0 +1,63 @@
+# Smush the source, Luke!
+# Copyright (C) 2026 Gary V. Vaughan
+
+before: |
+  -- What a script writes, without crush's exit status.
+  function out(...)
+     return (crushed(...))
+  end
+
+specify crush:
+- it runs a command with words and quotes: |
+    expect(out [[printf '%s|' a 'b  c' "d  e" f\ g '' x]]).
+       to_be 'a|b  c|d  e|f g||x|'
+
+- it ends a command at a semicolon or a newline, and skips comments: |
+    expect(out "printf a; printf b # not c\nprintf '%s' d \\\n  e\n").
+       to_be 'abde'
+
+- it sets a variable to a list, and joins the parts of a word: |
+    expect(out [[x=[a 'b c']; printf '[%s]' $x; y=[1 2]; printf ' %s' $x$y -$y]]).
+       to_be '[a][b c] a1 b c2 -1 -2'
+    expect(out [[x=[a b]; y=[1 2 3]; printf %s $x$y]]).
+       to_contain 'lists of different lengths'
+
+- it drops a word that is joined with an empty list, unless it is quoted: |
+    expect(out [[x=; printf '(%s)' a$x b "$x" '']]).to_be '(b)()()'
+
+- it takes an unset variable from the environment, split at blanks: |
+    local env = "CFLAGS='-O2  -g' DIR='a  b' "
+    expect(out([[printf '<%s>' $CFLAGS $DIR "$DIR"]], env)).
+       to_be '<-O2><-g><a><b><a  b>'
+
+- it passes a variable to a command only when it is written before it: |
+    expect(out [[x=1; sh -c 'printf "(%s)" "$x"'; x=2 sh -c 'printf "(%s)" "$x"']]).
+       to_be '()(2)'
+
+- it redirects output to a file: |
+    expect(out [[printf a > f; printf b >> f; sh -c 'printf c >&2' 2> g; cat f g]]).
+       to_be 'abc'
+
+- it shows a command that run runs, with its words quoted: |
+    expect(out [[x=[a 'b c']; run printf '<%s>' $x '']]).
+       to_be "% printf '<%s>' a 'b c' ''\n<a><b c><>"
+
+- it changes directory, and stops at exit: |
+    expect(out "mkdir d; cd d; pwd; exit 4; printf no").to_match '/d\n$'
+    expect(select(2, crushed 'exit 4')).to_be(4)
+
+- it writes the bytes of a file as C with embed: |
+    local c = out [[printf 'a"b\n\0' > f; embed name f]]
+    expect(c).to_contain 'const unsigned char name_data[] ='
+    expect(c).to_contain '"a\\"b\\n"\n    "\\000";'
+    expect(c).to_contain 'const unsigned long name_size = 5;'
+
+- it ends with the status of the command that fails: |
+    expect(select(2, crushed [[sh -c 'exit 7'; printf no]])).to_be(7)
+
+- it refuses a script that it cannot run before it runs any of it: |
+    for _, bad in ipairs {'a | b', 'if x', 'x=$(y)', "echo 'x"} do
+       local out, status = crushed('printf no\n' .. bad)
+       expect(status).to_be(3)
+       expect(out).to_match '^%./script: 2:%d+: '
+    end

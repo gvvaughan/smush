@@ -43,17 +43,16 @@ function restore()
 end
 
 
--- Compile host/barfx.c once for all the examples, which specl runs in
+-- Compile host/NAME.c once for all the examples, which specl runs in
 -- one process, and return the path of the program.
-local function barfx_program()
-   local path = registry['smush.spec.barfx']
-   if not path then
-      path = os.tmpname()
-      assert(os.execute(('${CC:-cc} ${CPPFLAGS} -o %s host/barfx.c'):
-                        format(path)))
-      registry['smush.spec.barfx'] = path
+local function host_program(name)
+   local key = 'smush.spec.' .. name
+   if not registry[key] then
+      registry[key] = os.tmpname()
+      assert(os.execute(('${CC:-cc} ${CPPFLAGS} -D_XOPEN_SOURCE=700 ' ..
+                         '-o %s host/%s.c'):format(registry[key], name)))
    end
-   return path
+   return registry[key]
 end
 
 
@@ -67,12 +66,31 @@ function unpacked(bytes, inspect)
    file:write(bytes)
    file:close()
    local pipe = io.popen(([[cd %s && %s %s.barf 2>%s.err; echo $?
-      %s]]):format(dir, barfx_program(), dir, dir, inspect or ':'))
+      %s]]):format(dir, host_program "barfx", dir, dir, inspect or ':'))
    local status, listing = pipe:read '*l', pipe:read '*a'
    pipe:close()
    local err = io.open(dir .. '.err'):read '*a'
    os.execute(('rm -rf %s %s.barf %s.err'):format(dir, dir, dir))
    return listing, tonumber(status), err
+end
+
+
+-- Run *script* with crush in a new directory, after *env*, such as
+-- `A=1 `, if given, and remove the directory.  Return what the script
+-- wrote to its standard output and error, and the exit status of
+-- crush.
+function crushed(script, env)
+   local dir = io.popen('mktemp -d'):read '*l'
+   local file = io.open(dir .. '/script', 'w')
+   file:write(script)
+   file:close()
+   local pipe = io.popen(('cd %s && %s%s ./script 2>&1; echo "status $?"'):
+                         format(dir, env or '', host_program 'crush'))
+   local output = pipe:read '*a'
+   pipe:close()
+   os.execute('rm -rf ' .. dir)
+   local text, status = output:match '^(.*)status (%d+)\n$'
+   return text, tonumber(status)
 end
 
 
