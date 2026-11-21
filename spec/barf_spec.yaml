@@ -4,11 +4,6 @@
 before:
   barf = require 'smush.barf'
 
-  -- A barf's body, with the trailer that gives its length.
-  function seal(body)
-     return body .. ('%015d\n'):format(#body)
-  end
-
   entries = {
      {path = 'main.lua', data = 'print "hi"\n'},
      {path = 'deps/lua/src/lua.h', data = 'int x;\n'},
@@ -41,6 +36,15 @@ specify smush.barf:
   - it makes a barf with no entries:
       expect(barf.pack {}).to_be('!<barf>\n' .. '000000000000008\n')
 
+  - it keeps the path, data and mode of each entry: |
+      local got = assert(unbarf(barf.pack(entries)))
+      expect(#got).to_be(#entries)
+      for i, entry in ipairs(entries) do
+         expect(got[i].path).to_be(entry.path)
+         expect(got[i].data).to_be(entry.data)
+         expect(got[i].mode).to_be(entry.mode or tonumber('644', 8))
+      end
+
   - it refuses a path that is not allowed:
       for path, why in pairs {
          [''] = 'is empty',
@@ -69,8 +73,8 @@ specify smush.barf:
       expect(bytes).to_contain '\n11 644 1\nprint "hi"\n\n7 644 2\n'
       expect(bytes).not_to_contain ' main.lua\n'
 
-  - it gives the paths back with unpack, and the data and the mode: |
-      local list = assert(barf.unpack(barf.pack(entries, {index = true})))
+  - it gives the paths back from the index, and the data and the mode: |
+      local list = assert(unbarf(barf.pack(entries, {index = true})))
       expect(#list).to_be(#entries)
       for i, entry in ipairs(entries) do
          expect(list[i].path).to_be(entry.path)
@@ -93,76 +97,9 @@ specify smush.barf:
             to_be(entries[i].data)
       end
 
-  - it is read when it is compressed too: |
-      local bytes = barf.pack(entries, {index = true, compress = true})
-      local list = assert(barf.unpack(bytes))
-      expect(list[#list].path).to_be(entries[#entries].path)
-
   - it makes no index unless it is asked for:
       expect(barf.pack(entries):sub(1, 8)).to_be '!<barf>\n'
 
   - it refuses an entry that has no data before it makes the index:
       expect(barf.pack({{path = 'x'}}, {index = true})).
          to_raise 'no data'
-
-  - it refuses a barf with no index, or an index that is not good: |
-      local function indexed(index, rest)
-         local body = '!<barx>\n' .. #index .. ' 644 index\n' .. index ..
-            '\n' .. rest
-         return select(2, barf.unpack(seal(body)))
-      end
-      expect(select(2, barf.unpack(seal '!<barx>\n1 644 1\na\n'))).
-         to_contain 'no index'
-      expect(indexed('return {', '')).to_contain 'bad index'
-      expect(indexed('return {}', '1 644 1\na\n')).
-         to_contain 'does not name'
-      expect(indexed('return {{"../x", 0, 1, 420}}', '1 644 1\na\n')).
-         to_contain 'has a ".." component'
-      expect(indexed('return {{"x", 0, 1, 420}}', '1 644 2\na\n')).
-         to_contain 'is not named'
-
-- describe unpack:
-  - it reads what pack wrote:
-      local got = assert(barf.unpack(barf.pack(entries)))
-      expect(#got).to_be(#entries)
-      for i, entry in ipairs(entries) do
-         expect(got[i].path).to_be(entry.path)
-         expect(got[i].data).to_be(entry.data)
-         expect(got[i].mode).to_be(entry.mode or tonumber('644', 8))
-      end
-
-  - it reads a barf with no entries:
-      expect(barf.unpack(barf.pack {})).to_equal {}
-
-  - it ignores what comes before the barf:
-      local script = '#!/bin/sh\necho hi\nexit\n'
-      local got = assert(barf.unpack(script .. barf.pack(entries)))
-      expect(#got).to_be(#entries)
-
-  - it is not confused by a magic line before the barf:
-      local script = "cat <<'EOF'\n!<barf>\nEOF\nexit\n"
-      local got = assert(barf.unpack(script .. barf.pack(entries)))
-      expect(got[1].path).to_be 'main.lua'
-
-  - it has no barf when there is no trailer:
-      expect(select(2, barf.unpack '#!/bin/sh\nexit\n')).to_be 'no trailer'
-      expect(select(2, barf.unpack '')).to_be 'no trailer'
-
-  - it has no barf when the trailer does not reach a magic:
-      expect(select(2, barf.unpack('some bytes\n' .. '000000000000005\n'))).
-         to_be 'no magic'
-
-  - it refuses a barf that is damaged:
-      local bytes = barf.pack {{path = 'x', data = 'abc'}}
-      local function damaged(from, to)
-         local body = bytes:sub(1, -17):gsub(from, to)
-         return select(2, barf.unpack(seal(body)))
-      end
-      expect(damaged('3 644 x', '9 644 x')).to_contain 'bad size'
-      expect(damaged('3 644 x', 'three x')).to_contain 'bad header'
-      expect(damaged('abc\n', 'abcd\n')).to_contain 'bad size'
-
-  - it refuses a path that is not allowed:
-      local body = '!<barf>\n0 644 ../x\n\n'
-      expect(select(2, barf.unpack(seal(body)))).
-         to_contain 'has a ".." component'

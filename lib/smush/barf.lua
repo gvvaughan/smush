@@ -42,10 +42,7 @@
     echo hi
     000000000000127
 
- `unpack` gives the entries with their paths, as for any barf.
-
- `host/barfx.c` reads a barf in C, and this module writes one, and
- reads one for the specs to check it by.
+ This module only writes a barf.
 
  @module smush.barf
 ]]
@@ -56,8 +53,6 @@ local _ENV = require 'std.normalize' {
    'string.find',
    'string.format',
    'string.gmatch',
-   'string.match',
-   'string.rep',
    'string.sub',
    'table.concat',
    choose = _std.choose,
@@ -72,20 +67,9 @@ local _ENV = require 'std.normalize' {
 
 
 local MAGIC = '!<barf>\n'
-local TRAILER = 16
-local LENGTH = '^(' .. rep('%d', 15) .. ')\n$'
 local DEFAULT_MODE = tonumber('644', 8)
 local INDEXED = '!<barx>\n'
 local INDEX = 'index'
-
-
--- A function that returns nil and the message that `format` makes.
-local function failing(...)
-   local args = {n = select('#', ...), ...}
-   return function()
-      return nil, format(unpack(args, 1, args.n))
-   end
-end
 
 
 --- Describe what is wrong with a path of an entry, if anything.
@@ -203,134 +187,6 @@ local function pack(entries, opts)
 end
 
 
--- The entries of *bytes* from *pos* to *last*, added to *entries*,
--- given the paths *seen* so far; or nil and why not.
-local function read_entries(bytes, pos, last, seen, entries)
-   local eol = pos <= last and find(bytes, '\n', pos, true)
-   local size, mode, path = match(sub(bytes, pos, eol or 0),
-                                  '^(%d+) ([0-7]+) ([^\n]+)\n$')
-   local first = eol and eol + 1
-   local data_end = size and first + tonumber(size) or last + 1
-   local problem = path_problem(path)
-   return cond(
-      {pos == last + 1, entries},
-      {pos > last, failing 'entries do not end at the trailer'},
-      {not size, failing('bad header at %d', pos)},
-      {data_end > last or sub(bytes, data_end, data_end) ~= '\n',
-         failing('bad size for %q', path)},
-      {problem, failing('path %q %s', path, problem)},
-      {seen[path], failing('path %q is there twice', path)},
-      {true, function()
-         local entry = {
-            path = path,
-            data = sub(bytes, first, data_end - 1),
-            mode = tonumber(mode, 8),
-         }
-         seen[path] = true
-         entries[#entries + 1] = entry
-         return read_entries(bytes, data_end + 1, last, seen, entries)
-      end}
-   )
-end
-
-
--- The state of `resolve` with the entry that the row *i* of the index
--- names.
-local function named(state, i, row)
-   local raw = state.raw[i + 1]
-   local path = type(row) == 'table' and row[1]
-   local problem = state.problem or cond(
-      {not raw or raw.path ~= tostring(i), function()
-         return format('entry %d is not named', i)
-      end},
-      {path_problem(path), function(why)
-         return format('path %q %s', tostring(path), why)
-      end},
-      {state.seen[tostring(path)], function()
-         return format('path %q is there twice', path)
-      end}
-   )
-   state.problem = problem
-   state.seen[tostring(path)] = true
-   state.entries[#state.entries + 1] = {
-      path = path, data = raw and raw.data, mode = raw and raw.mode,
-   }
-   return state
-end
-
-
--- The entries that the index, the first of *raw*, names, which are the
--- others, numbered; or nil and why not.
-local function resolve(raw)
-   local text = raw[1] and raw[1].data or ''
-   local chunk, why = load(text, '=index', 't', {})
-   return cond(
-      {not raw[1] or raw[1].path ~= INDEX, failing 'no index'},
-      {not chunk, failing('bad index: %s', why)},
-      {true, function()
-         local ok, rows = pcall(chunk)
-         local list = choose(ok and type(rows) == 'table', rows, {})
-         local state = foldl(iter(ipairs(list)),
-                             {raw = raw, seen = {}, entries = {}},
-                             named)
-         return cond(
-            {not ok or type(rows) ~= 'table', failing 'bad index'},
-            {type(rows) == 'table' and #rows ~= #raw - 1,
-               failing 'the index does not name the entries'},
-            {state.problem, failing('%s', state.problem)},
-            {true, state.entries}
-         )
-      end}
-   )
-end
-
-
--- The entries of the barf that has its magic line at *start* in
--- *bytes*, and ends at *last*; or nil and why not.
-local function read_barf(bytes, start, last)
-   local magic = sub(bytes, start, start + #MAGIC - 1)
-   local function entries()
-      return read_entries(bytes, start + #MAGIC, last, {}, {})
-   end
-   return cond(
-      {magic == MAGIC, entries},
-      {magic == INDEXED, function()
-         local raw, why = entries()
-         return cond(
-            {not raw, failing('%s', why)},
-            {true, function() return resolve(raw) end}
-         )
-      end},
-      {true, failing 'no magic'}
-   )
-end
-
-
---- Read the barf at the end of some bytes.
--- Whatever comes before the barf is ignored: the trailer gives where
--- the barf starts.
--- @string bytes a file, such as a script or a program, that ends in a
---    barf
--- @treturn[1] table a list of `{path=, data=, mode=}`, in order
--- @treturn[2] nil
--- @treturn[2] string why there is no barf
-local function unpack(bytes)
-   local length = tonumber(match(sub(bytes, -TRAILER), LENGTH))
-   local start = length and #bytes - TRAILER - length + 1
-   local last = #bytes - TRAILER
-   local magic = length and start >= 1
-      and sub(bytes, start, start + #MAGIC - 1)
-   return cond(
-      {not length, failing 'no trailer'},
-      {magic == MAGIC or magic == INDEXED, function()
-         return read_barf(bytes, start, last)
-      end},
-      {true, failing 'no magic'}
-   )
-end
-
-
 return {
    pack = pack,
-   unpack = unpack,
 }
