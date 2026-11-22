@@ -52,6 +52,27 @@ specify crush:
     expect(c).to_contain '"a\\"b\\n"\n    "\\000";'
     expect(c).to_contain 'const unsigned long name_size = 5;'
 
+- it writes the SHA-256 sum of each file with sha256: |
+    local sums = out [[printf abc > a; printf '' > b; sha256 a b]]
+    expect(sums).to_be(
+       'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad  a\n' ..
+       'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  b\n')
+
+- it sums a file that needs more than one block of padding, and a long one: |
+    expect(out [[printf abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq > f; sha256 f]]).
+       to_be '248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1  f\n'
+    expect(out [[sh -c 'head -c 1000000 /dev/zero | tr "\0" a' > f; sha256 f]]).
+       to_be 'cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0  f\n'
+
+- it redirects the sums, and goes on after a file that it cannot read: |
+    expect(out [[printf a > x; sha256 x > sums; cat sums]]).
+       to_be 'ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb  x\n'
+    local text, status = crushed 'printf b > y; sha256 nosuch y'
+    expect(status).to_be(1)
+    expect(text).to_contain 'sha256: nosuch: '
+    expect(text).to_contain '3e23e8160039594a33894f6564e1b1348bbd7a0088d42c4acb73eeaed59c009d  y'
+    expect(select(2, crushed 'sha256')).to_be(1)
+
 - it ends with the status of the command that fails: |
     expect(select(2, crushed [[sh -c 'exit 7'; printf no]])).to_be(7)
 
