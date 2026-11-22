@@ -12,10 +12,10 @@
     an archive that `host/barfx.c` unpacks, optionally compressed with LZ4
     and with an index of the paths.
 
-  - `smush crush BOOTSTRAP` runs a bootstrap script with crush, built from
-    `host/crush.c` once and kept in `$XDG_CACHE_HOME/smush`, in a staging
-    directory, and writes a compressed barf of the files that it leaves
-    below `barfz` there.
+  - `smush crush SCRIPT` runs a crush script with crush, built from
+    `host/crush.c` once and kept in `$XDG_CACHE_HOME/smush`.  With
+    `--first-run` it runs the script in a staging directory, and writes a
+    compressed barf of the files that it leaves below `barfz` there.
 
 
 ## Noteworthy changes in release 0.4 (2026-10-29) [stable]

@@ -73,16 +73,19 @@ a barf, an archive that `host/barfx.c` unpacks with nothing but a C compiler
 to build it, under the paths that are given.  `--compress` compresses the barf with
 LZ4, and `--index` keeps the paths in an index, with the entries numbered.
 
-`smush crush [--keep] BOOTSTRAP > payload.barf` builds `host/crush.c` with
-`$CC` the first time, and keeps the program in `$XDG_CACHE_HOME/smush`, or
+`smush crush SCRIPT` runs the crush script SCRIPT in the current directory,
+and exits with the status of crush.  Crush is built from `host/crush.c` with
+`$CC` the first time, and the program is kept in `$XDG_CACHE_HOME/smush`, or
 `~/.cache/smush`, named for the text of `crush.c` and for the system, so that
-no run builds it again, or runs a different `crush` that is on the path.  It
-makes a staging directory with an empty `barfz` in it, and runs the
-script BOOTSTRAP there with crush, which is how a standalone program is
-made.  What the script writes to its standard output goes to standard
-error.  Smush writes a compressed barf of the files that the script leaves
-below `barfz`, removes the staging directory, and exits with an error if the
-script fails.  `--keep` keeps the staging directory, and shows where it is.
+no run builds it again, or runs a different `crush` that is on the path.
+
+`smush crush --first-run [--keep] SCRIPT > payload.barf` makes a staging
+directory with an empty `barfz` in it, and runs the script there, which is how
+a standalone program is made.  What the script writes to its standard output
+goes to standard error.  Smush writes a compressed barf of the files that the
+script leaves below `barfz`, removes the staging directory, and exits with an
+error if the script fails.  `--keep` keeps the staging directory, and shows
+where it is.
 
 
 ## 3. Sources

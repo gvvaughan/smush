@@ -360,7 +360,7 @@ specify smush:
       os.remove(dir)
       assert(os.execute('mkdir ' .. dir))
       spit(dir .. '/bootstrap', 'mkdir barfz/a\necho hello > barfz/a/x.txt\necho noise\n')
-      local got = smush('.', 'crush', dir .. '/bootstrap')
+      local got = smush('.', 'crush', '--first-run', dir .. '/bootstrap')
       os.execute('rm -rf ' .. dir)
       expect(got.status).to_be(0)
       expect(got.output:sub(1, 9)).to_be '!<barfz>\n'
@@ -373,7 +373,7 @@ specify smush:
       os.remove(dir)
       assert(os.execute('mkdir ' .. dir))
       spit(dir .. '/bootstrap', 'echo here > barfz/where\npwd > barfz/cwd\n')
-      local got = smush('.', 'crush', '--keep', dir .. '/bootstrap')
+      local got = smush('.', 'crush', '--first-run', '--keep', dir .. '/bootstrap')
       os.execute('rm -rf ' .. dir)
       expect(got.status).to_be(0)
       local staging = got.errout:match 'kept (%S+)'
@@ -386,9 +386,9 @@ specify smush:
       os.remove(dir)
       assert(os.execute('mkdir ' .. dir))
       spit(dir .. '/bootstrap', 'echo hello > barfz/x\n')
-      local first = smush('.', 'crush', dir .. '/bootstrap')
+      local first = smush('.', 'crush', '--first-run', dir .. '/bootstrap')
       local kept = io.popen('ls ' .. cache .. '/smush'):read '*a'
-      local second = smush('.', 'crush', dir .. '/bootstrap')
+      local second = smush('.', 'crush', '--first-run', dir .. '/bootstrap')
       os.execute('rm -rf ' .. dir)
       expect(first.status).to_be(0)
       expect(first.errout).to_contain 'building crush, once'
@@ -405,7 +405,7 @@ specify smush:
       spit(dir .. '/bootstrap', 'echo hello > barfz/x\n')
       -- A file is in the way of the directory.
       spit(cache .. '/smush', 'not a directory')
-      local got = smush('.', 'crush', '--keep', dir .. '/bootstrap')
+      local got = smush('.', 'crush', '--first-run', '--keep', dir .. '/bootstrap')
       os.execute('rm -rf ' .. dir)
       expect(got.status).to_be(0)
       local staging = got.errout:match 'kept (%S+)'
@@ -420,8 +420,8 @@ specify smush:
       assert(os.execute('chmod 755 ' .. dir .. '/bin/crush'))
       spit(dir .. '/bootstrap', 'echo hello > barfz/x\n')
       setenv('PATH', dir .. '/bin:' .. was_path)
-      local first = smush('.', 'crush', dir .. '/bootstrap')
-      local second = smush('.', 'crush', dir .. '/bootstrap')
+      local first = smush('.', 'crush', '--first-run', dir .. '/bootstrap')
+      local second = smush('.', 'crush', '--first-run', dir .. '/bootstrap')
       os.execute('rm -rf ' .. dir)
       for _, got in ipairs {first, second} do
          expect(got.status).to_be(0)
@@ -434,7 +434,7 @@ specify smush:
       os.remove(dir)
       assert(os.execute('mkdir ' .. dir))
       spit(dir .. '/bootstrap', 'false\n')
-      local got = smush('.', 'crush', dir .. '/bootstrap')
+      local got = smush('.', 'crush', '--first-run', dir .. '/bootstrap')
       os.execute('rm -rf ' .. dir)
       expect(got.status).to_be(1)
       expect(got.output).to_be ''
@@ -446,6 +446,29 @@ specify smush:
       expect(got.status).to_be(1)
       expect(got.output).to_be ''
       expect(got.errout).to_contain 'no host/crush.c next to the bin directory of /nowhere/bin/smush'
+
+  - it runs a script in the current directory, and exits with the status of crush: |
+      local dir = os.tmpname()
+      os.remove(dir)
+      assert(os.execute('mkdir ' .. dir))
+      spit(dir .. '/script', ('sh -c pwd > %s/where\nprintf hi > %s/hello\n' ..
+                              "sh -c 'exit 7'\nprintf no > %s/after\n"):
+                             format(dir, dir, dir))
+      local got = smush('.', 'crush', dir .. '/script')
+      local where = io.open(dir .. '/where'):read '*a'
+      local hello = io.open(dir .. '/hello'):read '*a'
+      local after = io.open(dir .. '/after')
+      os.execute('rm -rf ' .. dir)
+      expect(where).to_be(io.popen('pwd'):read '*l' .. '\n')
+      expect(hello).to_be 'hi'
+      expect(after).to_be(nil)
+      expect(got.status).to_be(7)
+      expect(got.errout).not_to_contain 'kept'
+
+  - it keeps the staging directory only for --first-run: |
+      local got = smush('.', 'crush', '--keep', 'x')
+      expect(got.status).to_be(1)
+      expect(got.errout).to_contain '--keep is for --first-run'
 
   - it refuses a missing script and an unknown option:
       expect(smush('.', 'crush').status).to_be(1)

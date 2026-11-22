@@ -27,6 +27,7 @@ local _ENV = require 'std.normalize' {
    'io.popen',
    'io.stderr',
    'io.write',
+   'math.floor',
    'os.execute',
    'os.exit',
    'os.getenv',
@@ -41,6 +42,7 @@ local _ENV = require 'std.normalize' {
    'table.sort',
    File = _context.File,
    choose = _std.choose,
+   cond = _std.cond,
    slurp = _context.slurp,
    each = _std.each,
    keys = _std.keys,
@@ -248,7 +250,7 @@ local OPTIONS = {main = true, module = true, external = true}
 local USAGE = [[
 Usage: smush [OPTION]... SOURCE...
        smush barf [OPTION]... FILE...
-       smush crush [--keep] BOOTSTRAP
+       smush crush [--first-run] [--keep] SCRIPT
 
 Write a single file that bundles each SOURCE, to standard output.  A SOURCE
 is the path of a module, which is bundled under the name that its path makes,
@@ -270,7 +272,7 @@ have a copy of one file share the one.
   --bundled        list the rocks bundled in smush, and exit
 
 `smush barf --help` shows how to write a barf of files, and not a bundle.
-`smush crush --help` shows how to run a bootstrap script, and not write a bundle.
+`smush crush --help` shows how to run a crush script, and not write a bundle.
 ]]
 
 
@@ -287,17 +289,21 @@ given for it.
 
 
 local CRUSH_USAGE = [[
-Usage: smush crush [OPTION]... BOOTSTRAP
+Usage: smush crush [OPTION]... SCRIPT
 
-Build crush, make a staging directory with an empty directory barfz in it,
-and run the script BOOTSTRAP there with crush.  Write a compressed barf of
-the files that it leaves below barfz to standard output.  What the script
-writes to its standard output goes to standard error, and the staging
-directory is removed at the end.  Crush is built once, and kept in
+Run the crush script SCRIPT in the current directory, and exit with the
+status of crush.  Crush is built from host/crush.c once, and kept in
 $XDG_CACHE_HOME/smush, or ~/.cache/smush, for every later run.
 
-  --keep  keep the staging directory, and show where it is
-  --help  show this help, and exit
+  --first-run  make a staging directory with an empty directory barfz in
+               it, and run SCRIPT there, and not in the current directory.
+               Write a compressed barf of the files that it leaves below
+               barfz to standard output.  What the script writes to its
+               standard output goes to standard error, and the staging
+               directory is removed at the end
+  --keep       with --first-run, keep the staging directory, and show
+               where it is
+  --help       show this help, and exit
 ]]
 
 
@@ -350,6 +356,23 @@ local function line_of(command)
    local line = pipe:read '*l'
    pipe:close()
    return line
+end
+
+
+-- The exit status that the results of os.execute are, in any Lua version:
+-- *ok*, *how* and *code* in Lua 5.2 and later, or the wait status in 5.1,
+-- which has the signal that ended the program in its low bits, if there was
+-- one, and the exit status above them.
+local function exit_code(ok, how, code)
+   return cond(
+      {ok == true, 0},
+      {how == 'exit', code},
+      {how == 'signal', function() return 128 + code end},
+      {type(ok) == 'number' and ok % 128 ~= 0,
+       function() return 128 + ok % 128 end},
+      {type(ok) == 'number', function() return floor(ok / 256) end},
+      {true, 1}
+   )
 end
 
 
@@ -440,27 +463,34 @@ local function crush_program(source, dir)
 end
 
 
--- Run the bootstrap script in *args* with crush, and write a barf of
--- what it leaves in barfz.  The host files are next to the bin directory
--- of *script*, the path of the running script.
+-- Run the crush script in *args* with the crush that is built from the
+-- host files, which are next to the bin directory of *script*, the path of
+-- the running script.  With --first-run, write a barf of what the script
+-- leaves in the barfz of a staging directory that it runs in.
 local function crush_main(args, script)
-   local keep, bootstrap
+   local first_run, keep, name
    each(args, function(a)
-      if a == '--keep' then
+      if a == '--first-run' then
+         first_run = true
+      elseif a == '--keep' then
          keep = true
       elseif a == '--help' then
          write(CRUSH_USAGE)
          exit(0)
-      elseif sub(a, 1, 1) == '-' or bootstrap then
+      elseif sub(a, 1, 1) == '-' or name then
          stderr:write("smush crush: unrecognized argument '", a, "'\n",
             CRUSH_USAGE)
          exit(1)
       else
-         bootstrap = a
+         name = a
       end
    end)
-   if not bootstrap then
-      stderr:write('smush crush: give a BOOTSTRAP script\n', CRUSH_USAGE)
+   if not name then
+      stderr:write('smush crush: give a SCRIPT\n', CRUSH_USAGE)
+      exit(1)
+   end
+   if keep and not first_run then
+      stderr:write('smush crush: --keep is for --first-run\n', CRUSH_USAGE)
       exit(1)
    end
    local source = host.path('crush.c', script)
@@ -484,16 +514,23 @@ local function crush_main(args, script)
       exit(1)
    end
 
-   local bootstrap_path = choose(sub(bootstrap, 1, 1) == '/', bootstrap,
-      function() return line_of 'pwd' .. '/' .. bootstrap end)
    local crush = crush_program(source, dir)
    if not crush then
       stop 'cannot build crush'
    end
+   if not first_run then
+      local ok, how, code = execute(format('%s %s', quoted(crush),
+                                           quoted(name)))
+      finish()
+      exit(exit_code(ok, how, code))
+   end
+
+   local script_path = choose(sub(name, 1, 1) == '/', name,
+      function() return line_of 'pwd' .. '/' .. name end)
    if not succeeded(execute(format('cd %s && mkdir barfz && %s %s >&2',
                                    quoted(dir), quoted(crush),
-                                   quoted(bootstrap_path)))) then
-      stop('the bootstrap ' .. bootstrap .. ' failed')
+                                   quoted(script_path)))) then
+      stop('the script ' .. name .. ' failed')
    end
 
    local entries = {}
