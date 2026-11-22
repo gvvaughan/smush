@@ -121,9 +121,20 @@ typedef struct {
     word *word;
     redirect *redirect;
     size_t nassign, nword, nredirect;
-    int or_next;  /* the next command runs only if this one fails */
     const char *at;  /* where it starts, for error messages */
 } command;
+
+/* A chain of commands, each of which runs only if the one before it
+   fails. */
+typedef struct {
+    command *chain;
+    size_t nchain;
+} stmt;
+
+typedef struct {
+    stmt *item;
+    size_t n;
+} block;
 
 typedef struct {
     char *name;
@@ -399,36 +410,23 @@ parse_value(assign *a, const char *tz)
 }
 
 
-/* Parse the script at TZ, and append its commands to the array *C of *N. */
-static void
-parse(const char *tz, command **c, size_t *n)
+static int
+at_end(const char *tz)
 {
-    command *cmd = NULL;
+    return !*tz || *tz == '\n' || *tz == ';'
+           || (tz[0] == '|' && tz[1] == '|');
+}
+
+
+/* Parse the words, assignments and redirections of CMD from TZ, up to
+   the end of the command, and return where that is. */
+static const char *
+parse_command(const char *tz, command *cmd)
+{
     const char *digits;
 
-    for (;;) {
-        tz = skip_blanks(tz);
-        if (!*tz || *tz == '\n' || *tz == ';') {
-            cmd = NULL;
-            if (!*tz)
-                return;
-            tz++;
-            continue;
-        }
-        if (tz[0] == '|' && tz[1] == '|') {
-            if (!cmd || !cmd->nword)
-                exit(parseerror(tz, "|| needs a command before it"));
-            cmd->or_next = 1;
-            cmd = NULL;
-            tz = skip_blanks(tz + 2);
-            if (!*tz || *tz == '\n' || *tz == ';')
-                exit(parseerror(tz, "|| needs a command after it"));
-            continue;
-        }
-        if (!cmd) {
-            cmd = grow(c, n, sizeof **c);
-            cmd->at = tz;
-        }
+    cmd->at = tz = skip_blanks(tz);
+    while (!at_end(tz)) {
         for (digits = tz; isdigit((unsigned char) *digits); )
             digits++;
         if (*digits == '>') {
@@ -437,8 +435,7 @@ parse(const char *tz, command **c, size_t *n)
             r->fd = digits == tz ? 1 : atoi(tz);
             r->append = digits[1] == '>';
             tz = skip_blanks(digits + 1 + r->append);
-            if (!*tz || strchr("\n;>", *tz)
-                || (tz[0] == '|' && tz[1] == '|'))
+            if (at_end(tz) || *tz == '>')
                 exit(parseerror(tz,
                                 "a redirection has the name of a file"));
             tz = parse_word(&r->target, tz, 0);
@@ -464,6 +461,45 @@ parse(const char *tz, command **c, size_t *n)
                                     "is not in crush"));
             }
         }
+        tz = skip_blanks(tz);
+    }
+    return tz;
+}
+
+
+/* Parse the chain of commands joined by || at TZ into S, and return
+   where it ends. */
+static const char *
+parse_chain(const char *tz, stmt *s)
+{
+    command *cmd;
+
+    for (;;) {
+        cmd = grow(&s->chain, &s->nchain, sizeof *cmd);
+        tz = parse_command(tz, cmd);
+        if (s->nchain > 1 && !cmd->nword)
+            exit(parseerror(cmd->at, "|| needs a command after it"));
+        if (*tz != '|')
+            return tz;
+        if (!cmd->nword)
+            exit(parseerror(tz, "|| needs a command before it"));
+        tz += 2;
+    }
+}
+
+
+/* Parse the statements of the script at TZ into B. */
+static void
+parse_block(const char *tz, block *b)
+{
+    for (;;) {
+        tz = skip_blanks(tz);
+        if (!*tz)
+            return;
+        if (*tz == '\n' || *tz == ';')
+            tz++;
+        else
+            tz = parse_chain(tz, grow(&b->item, &b->n, sizeof *b->item));
     }
 }
 
@@ -951,11 +987,32 @@ run(const command *c)
 }
 
 
+/* Run the statement S, a chain of commands, and return its status. */
+static int
+run_stmt(const stmt *s)
+{
+    size_t i, j;
+
+    for (i = 0; i < s->nchain; i++) {
+        const command *c = &s->chain[i];
+        if (c->nword) {
+            if (!(status = run(c)))
+                return 0;
+            continue;
+        }
+        for (j = 0; j < c->nassign; j++)
+            set(c->assign[j].name,
+                expand_all(c->assign[j].value, c->assign[j].n, c->at));
+    }
+    return status;
+}
+
+
 int
 main(int argc, char **argv)
 {
-    command *c = NULL;
-    size_t n = 0, i, j;
+    block top = {NULL, 0};
+    size_t i;
     FILE *f;
     char *buf;
     long size = 0;
@@ -976,25 +1033,9 @@ main(int argc, char **argv)
         exit(parseerror(text + strlen(text),
                         "a NUL is not in a script"));
 
-    parse(text, &c, &n);
-    for (i = 0; i + 1 < n; i++)
-        if (c[i].or_next && !c[i + 1].nword)
-            exit(parseerror(c[i + 1].at, "|| needs a command after it"));
-    for (i = 0; i < n; i++) {
-        if (!c[i].nword) {
-            for (j = 0; j < c[i].nassign; j++)
-                set(c[i].assign[j].name,
-                    expand_all(c[i].assign[j].value, c[i].assign[j].n,
-                               c[i].at));
-            continue;
-        }
-        status = run(&c[i]);
-        while (status && c[i].or_next)
-            status = run(&c[++i]);
-        if (status)
+    parse_block(text, &top);
+    for (i = 0; i < top.n; i++)
+        if (run_stmt(&top.item[i]))
             return status;
-        while (c[i].or_next)  /* the rest of a chain that worked */
-            i++;
-    }
     return 0;
 }
