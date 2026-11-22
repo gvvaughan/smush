@@ -43,6 +43,9 @@
  *                       number as `const unsigned long NAME_size`
  *     sha256 FILE...    write the SHA-256 sum of each FILE, as
  *                       `HASH  FILE`, the way sha256sum does
+ *     sha256 -c HASH:FILE...
+ *                       check each FILE against its HASH, of 64 hex
+ *                       digits, and write `FILE: OK` or `FILE: FAILED`
  *     run COMMAND...    write `% COMMAND...` on stderr, with the words
  *                       expanded, and then run COMMAND
  *
@@ -110,6 +113,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -1043,6 +1047,62 @@ sha256_sum(FILE *in, char *hex)
 }
 
 
+/* Is the word W a HASH, of 64 hex digits, and a `:` after it? */
+static int
+is_check(const char *w)
+{
+    size_t k;
+
+    for (k = 0; k < 64 && isxdigit((unsigned char) w[k]); k++)
+        ;
+    return k == 64 && w[64] == ':';
+}
+
+
+/* The builtin `sha256 -c HASH:FILE...`.  It checks each FILE against its
+   HASH, in either case, and writes `FILE: OK` or `FILE: FAILED` to the
+   standard output.  It goes on after a file that it cannot read or a
+   word that is not HASH:FILE, and returns 1 if there was one, or a file
+   that does not match. */
+static int
+sha256_check(char **words, size_t n)
+{
+    char hex[65];
+    const char *file;
+    FILE *in;
+    size_t i, failed = 0;
+
+    if (!n) {
+        fprintf(stderr, "crush: sha256: -c needs HASH:FILE\n");
+        return 1;
+    }
+    for (i = 0; i < n; i++) {
+        if (!is_check(words[i])) {
+            fprintf(stderr, "crush: sha256: %s: is not HASH:FILE\n",
+                    words[i]);
+            failed++;
+            continue;
+        }
+        file = words[i] + 65;
+        if (!(in = fopen(file, "rb")) || sha256_sum(in, hex)) {
+            fprintf(stderr, "crush: sha256: %s: %s\n", file,
+                    strerror(errno));
+            failed++;
+        } else if (strncasecmp(hex, words[i], 64)) {
+            printf("%s: FAILED\n", file);
+            failed++;
+        } else
+            printf("%s: OK\n", file);
+        if (in)
+            fclose(in);
+    }
+    if (failed)
+        fprintf(stderr, "crush: sha256: %zu of %zu did not check\n",
+                failed, n);
+    return fflush(stdout) != 0 || failed != 0;
+}
+
+
 /* The builtin `sha256 FILE...`.  It writes the SHA-256 sum of each FILE
    to the standard output, as `HASH  FILE`, the way sha256sum does, so
    that a build can check what it fetched without a tool for it.  It
@@ -1059,6 +1119,8 @@ sha256(char **argv, size_t argc)
         fprintf(stderr, "crush: sha256: needs a file\n");
         return 1;
     }
+    if (!strcmp(argv[1], "-c"))
+        return sha256_check(argv + 2, argc - 2);
     for (i = 1; i < argc; i++) {
         if (!(in = fopen(argv[i], "rb")) || sha256_sum(in, hex)) {
             fprintf(stderr, "crush: sha256: %s: %s\n", argv[i],

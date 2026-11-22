@@ -73,6 +73,48 @@ specify crush:
     expect(text).to_contain '3e23e8160039594a33894f6564e1b1348bbd7a0088d42c4acb73eeaed59c009d  y'
     expect(select(2, crushed 'sha256')).to_be(1)
 
+- it checks each file against its sum with sha256 -c: |
+    local abc = 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad'
+    local empty = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'
+    expect(out("printf abc > a; printf '' > b; sha256 -c " ..
+               abc .. ':a ' .. empty .. ':b')).
+       to_be 'a: OK\nb: OK\n'
+    expect(out("printf abc > a; sha256 -c " .. abc:upper() .. ':a')).
+       to_be 'a: OK\n'
+    expect(out("printf abc > 'a b'; sha256 -c " .. abc .. ":'a b'")).
+       to_be 'a b: OK\n'
+
+- it fails if a file does not match its sum, after it checks the rest: |
+    local abc = 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad'
+    local text, status = crushed("printf abd > a; printf abc > b; sha256 -c " ..
+                                 abc .. ':a ' .. abc .. ':b; printf no')
+    expect(status).to_be(1)
+    expect(text).to_contain 'a: FAILED\nb: OK\n'
+    expect(text).to_contain '1 of 2 did not check'
+    expect(text).not_to_match 'no$'
+
+- it fails for a file that it cannot read, and a word that is not HASH:FILE: |
+    local abc = 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad'
+    local text, status = crushed('printf abc > b; sha256 -c ' .. abc ..
+                                 ':nosuch ' .. abc .. ':b')
+    expect(status).to_be(1)
+    expect(text).to_contain 'sha256: nosuch: '
+    expect(text).to_contain 'b: OK'
+    for _, bad in ipairs {'abc:b', 'b', abc, abc .. 'x:b', abc:sub(2) .. ':b'} do
+       text, status = crushed('printf abc > b; sha256 -c ' .. bad)
+       expect(status).to_be(1)
+       expect(text).to_contain 'is not HASH:FILE'
+    end
+    expect(select(2, crushed 'sha256 -c')).to_be(1)
+
+- it checks the files of a for with the sums that are next to them: |
+    local abc = 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad'
+    local empty = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'
+    expect(out("printf abc > a; printf '' > b\nrows=[\n a " .. abc ..
+               "\n b " .. empty .. "\n]\nfor file sum in $rows {\n " ..
+               "sha256 -c $sum:$file\n}")).
+       to_be 'a: OK\nb: OK\n'
+
 - it runs the command after || only if the one before it fails: |
     expect(out [[printf a || printf b]]).to_be 'a'
     expect(out [[false || printf b]]).to_be 'b'
