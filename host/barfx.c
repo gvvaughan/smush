@@ -40,6 +40,10 @@
  *
  * fseeko needs the POSIX feature macros on some systems, so
  * a build can put `-D_POSIX_C_SOURCE=200809L` in CPPFLAGS.
+ *
+ * With BARFX_LIBRARY defined, including this file gives only what reads
+ * a barf that is in memory, and not the program: digits, number,
+ * barf_length and barf_entry.
  */
 
 #include <errno.h>
@@ -48,6 +52,93 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+
+
+/* Read the digits at *S in BASE as a number into *N, and move *S past
+ * them.  Return 0 if there are none, or the number is too big.  Unlike
+ * strtoul, this accepts nothing before the digits, not even a sign.
+ */
+static int
+digits(char **s, unsigned base, unsigned long *n)
+{
+    char *p = *s;
+    unsigned long v = 0;
+    unsigned d;
+
+    for (; *p >= '0' && (unsigned) (*p - '0') < base; p++) {
+        d = (unsigned) (*p - '0');
+        if (v > (ULONG_MAX - d) / base)
+            return 0;
+        v = v * base + d;
+    }
+    if (p == *s)
+        return 0;
+    *n = v;
+    *s = p;
+    return 1;
+}
+
+
+/* 0 if S starts with 15 digits, or else -1. */
+static int
+number(const unsigned char *s)
+{
+    int i;
+
+    for (i = 0; i < 15; i++)
+        if (s[i] < '0' || s[i] > '9')
+            return -1;
+    return 0;
+}
+
+
+/* Read the length from TAIL, the last 16 bytes of a barf: 15 digits and
+ * a newline.  Return 0, or -1 if it is not that.
+ */
+static int
+barf_length(char *tail, unsigned long *length)
+{
+    char *p = tail;
+
+    if (number((unsigned char *) tail) || tail[15] != '\n')
+        return -1;
+    return digits(&p, 10, length) ? 0 : -1;
+}
+
+
+/* Read the entry that starts at P, before STOP, the end of the barf: a
+ * header SIZE PATH that ends with the first newline, then SIZE bytes of
+ * data and a newline.  Point *NAME at the path, which now ends with a
+ * NUL where the newline was, *DATA at the data, and set *SIZE.  Return
+ * 0, or 1 if the header is bad, or 2 if the data is not all there.
+ */
+static int
+barf_entry(char *p, char *stop, char **name, char **data,
+           unsigned long *size)
+{
+    char *nl, *e;
+
+    if (!(nl = memchr(p, '\n', (size_t) (stop - p))) ||
+        memchr(p, 0, (size_t) (nl - p)))
+        return 1;
+    *nl = 0;
+    *data = nl + 1;
+
+    e = p;
+    if (!digits(&e, 10, size) || *e != ' ')
+        return 1;
+    *name = e + 1;
+
+    /* The data and its trailing newline must fit in the rest of the
+       barf. */
+    if (*size >= (unsigned long) (stop - *data) ||
+        (*data)[*size] != '\n')
+        return 2;
+    return 0;
+}
+
+
+#ifndef BARFX_LIBRARY
 
 
 /* Report ERRMSG on stderr, and exit with status 1. */
@@ -74,31 +165,6 @@ argfatal(const char *errmsg)
 {
     fprintf(stderr, "barfx: %s\n", errmsg);
     exit(2);
-}
-
-
-/* Read the digits at *S in BASE as a number into *N, and move *S past
- * them.  Return 0 if there are none, or the number is too big.  Unlike
- * strtoul, this accepts nothing before the digits, not even a sign.
- */
-static int
-digits(char **s, unsigned base, unsigned long *n)
-{
-    char *p = *s;
-    unsigned long v = 0;
-    unsigned d;
-
-    for (; *p >= '0' && (unsigned) (*p - '0') < base; p++) {
-        d = (unsigned) (*p - '0');
-        if (v > (ULONG_MAX - d) / base)
-            return 0;
-        v = v * base + d;
-    }
-    if (p == *s)
-        return 0;
-    *n = v;
-    *s = p;
-    return 1;
 }
 
 
@@ -133,19 +199,6 @@ parents(char *p)
         mkdir(p, 0777);
         *s = '/';
     }
-}
-
-
-/* 0 if S starts with 15 digits, or else -1. */
-static int
-number(const unsigned char *s)
-{
-    int i;
-
-    for (i = 0; i < 15; i++)
-        if (s[i] < '0' || s[i] > '9')
-            return -1;
-    return 0;
 }
 
 
@@ -210,10 +263,11 @@ int
 main(int argc, char **argv)
 {
     unsigned char *body = NULL;
-    char tail[16], *p, *stop, *nl, *e, *data;
+    char tail[16], *p, *stop, *name, *data;
     FILE *in, *out;
     off_t end;
-    unsigned long size, length, i;
+    unsigned long size, length = 0, i;
+    int bad;
 
     if (argc != 2)
         argfatal("usage: barfx FILE");
@@ -222,11 +276,8 @@ main(int argc, char **argv)
 
     /* The trailer: the length of the barf, 15 digits and a newline. */
     if (fseeko(in, -16, SEEK_END) || (end = ftello(in)) < 0 ||
-        fread(tail, 1, 16, in) != 16 || tail[15] != '\n' ||
-        number((unsigned char *) tail))
+        fread(tail, 1, 16, in) != 16 || barf_length(tail, &length))
         fatal("no trailer");
-    for (length = 0, i = 0; i < 15; i++)
-        length = length * 10 + tail[i] - '0';
 
     /* The barf starts that far before the trailer.  Read all of it. */
     if (length < 8 || length > (unsigned long) end ||
@@ -254,27 +305,17 @@ main(int argc, char **argv)
     /* Walk the entries, from after the magic line to the end. */
     for (p = (char *) body + 8, stop = (char *) body + length; p < stop;
          p = data + size + 1) {
-        /* The header: SIZE PATH, ended by the first newline. */
-        if (!(nl = memchr(p, '\n', stop - p)) || memchr(p, 0, nl - p))
-            fatal("bad header");
-        *nl = 0;
-        data = nl + 1;
-
-        e = p;
-        if (!digits(&e, 10, &size) || *e != ' ')
-            fatal("bad header");
-
-        /* The data and its trailing newline must fit in the rest of the
-           barf. */
-        if (!path_ok(e + 1) ||
-            size >= (unsigned long) (stop - data) || data[size] != '\n')
+        if ((bad = barf_entry(p, stop, &name, &data, &size)))
+            fatal(bad == 1 ? "bad header" : "bad entry");
+        if (!path_ok(name))
             fatal("bad entry");
-        e++;
 
-        parents(e);
-        if (!(out = fopen(e, "wb")) ||
+        parents(name);
+        if (!(out = fopen(name, "wb")) ||
             fwrite(data, 1, size, out) != size || fclose(out))
-            sysfatal(e);
+            sysfatal(name);
     }
     return 0;
 }
+
+#endif

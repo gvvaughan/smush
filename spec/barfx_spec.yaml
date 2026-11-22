@@ -86,3 +86,65 @@ specify barfx:
     local _, status, err = unpacked 'hello'
     expect(status).to_be(1)
     expect(err).to_contain 'no trailer'
+
+- it has only what reads a barf in memory with BARFX_LIBRARY, that a program can use: |
+    -- Print the first entry of the indexed barf on standard input.
+    local source = os.tmpname()
+    local exe = os.tmpname()
+    local file = io.open(source, 'w')
+    file:write [[
+    #define BARFX_LIBRARY
+    #include "barfx.c"
+
+    int
+    main(void)
+    {
+        static char buf[1 << 16];
+        unsigned long length, size;
+        char *name, *data;
+        size_t n = fread(buf, 1, sizeof buf, stdin);
+        int bad;
+
+        if (n < 16 || barf_length(buf + n - 16, &length) || length > n - 16)
+            return 2;
+        if (memcmp(buf + n - 16 - length, "!<barfx>\n", 9))
+            return 3;
+        bad = barf_entry(buf + n - 16 - length + 9, buf + n - 16, &name,
+                         &data, &size);
+        if (bad)
+            return 10 + bad;
+        printf("%s %lu\n%.*s", name, size, (int) size, data);
+        return 0;
+    }
+    ]]
+    file:close()
+    assert(os.execute(('${CC:-cc} ${CPPFLAGS} -D_XOPEN_SOURCE=700 -Ihost ' ..
+                       '-Wall -Wextra -Werror -o %s -x c %s'):format(exe, source)))
+
+    local function reads(barfx)
+       local input = os.tmpname()
+       local f = io.open(input, 'wb')
+       f:write(barfx)
+       f:close()
+       local pipe = io.popen(exe .. ' < ' .. input .. '; echo "status $?"')
+       local output = pipe:read '*a'
+       pipe:close()
+       os.remove(input)
+       return output:match '^(.*)status (%d+)\n$'
+    end
+
+    local good = barf.pack(entries, {index = true})
+    local text, status = reads(good)
+    expect(status).to_be '0'
+    expect(text).to_match '^index %d+\nreturn {\n{"main.lua", '
+    expect(text).to_contain '{"bin", '
+
+    local function sealed_x(...)
+       local body = '!<barfx>\n' .. table.concat {...}
+       return body .. ('%015d\n'):format(#body)
+    end
+    expect(select(2, reads('hello'))).to_be '2'
+    expect(select(2, reads(sealed_x('3\nabc\n')))).to_be '11'
+    expect(select(2, reads(sealed_x('9 index\nabc\n')))).to_be '12'
+    os.remove(source)
+    os.remove(exe)
