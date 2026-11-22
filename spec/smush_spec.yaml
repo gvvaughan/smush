@@ -308,3 +308,27 @@ specify smush:
   - it keeps what it bundles working: |
       p = smush(tmpdir, '--module=twelve', 'twelve')
       expect(load(p.output)()).to_be(2)
+
+- describe barf:
+  - it writes a barf of files: |
+      local got = smush('.', 'barf', 'bin/smush', 'lib/smush/barf.lua')
+      expect(got.status).to_be(0)
+      local entries = unbarf(got.output)
+      expect(#entries).to_be(2)
+      expect(entries[1].path).to_be 'bin/smush'
+      expect(entries[2].path).to_be 'lib/smush/barf.lua'
+      expect(entries[2].data).to_be(io.open('lib/smush/barf.lua', 'rb'):read '*a')
+
+  - it takes options to compress it and to index it: |
+      expect(smush('.', 'barf', '--compress', 'bin/smush').output:sub(1, 9)).
+         to_be '!<barfz>\n'
+      expect(smush('.', 'barf', '--index', 'bin/smush').output:sub(1, 9)).
+         to_be '!<barfx>\n'
+
+  - it fails for a file that is not there, or a path that a barf refuses: |
+      local missing = smush('.', 'barf', 'no/such/file')
+      expect(missing.status).to_be(1)
+      expect(missing.errout).to_contain 'no/such/file'
+      local absolute = smush('.', 'barf', os.getenv 'PWD' .. '/bin/smush')
+      expect(absolute.status).to_be(1)
+      expect(absolute.errout).to_contain 'is absolute'

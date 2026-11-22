@@ -8,6 +8,10 @@
     that it bundles, and takes out only their comments, their blank lines
     and the white space that is not needed, so that the bundle can be read.
 
+  - `smush barf [--compress] [--index] FILE...` writes the files as a barf,
+    an archive that `host/barfx.c` unpacks, optionally compressed with LZ4
+    and with an index of the paths.
+
 
 ## Noteworthy changes in release 0.4 (2026-10-29) [stable]
 

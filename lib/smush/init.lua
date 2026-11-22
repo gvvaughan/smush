@@ -16,6 +16,7 @@
 
 
 local Lexer = require 'smush.lexer'.prototype
+local barf = require 'smush.barf'
 local minify = require 'smush.minify'
 local _context = require 'std.prototype.contextmanager'
 local _std = require 'std.functional.init'
@@ -240,6 +241,7 @@ local OPTIONS = {main = true, module = true, external = true}
 
 local USAGE = [[
 Usage: smush [OPTION]... SOURCE...
+       smush barf [OPTION]... FILE...
 
 Write a single file that bundles each SOURCE, to standard output.  A SOURCE
 is the path of a module, which is bundled under the name that its path makes,
@@ -259,7 +261,52 @@ have a copy of one file share the one.
   --help           show this help, and exit
   --version        show the version, and exit
   --bundled        list the rocks bundled in smush, and exit
+
+`smush barf --help` shows how to write a barf of files, and not a bundle.
 ]]
+
+
+local BARF_USAGE = [[
+Usage: smush barf [OPTION]... FILE...
+
+Write a barf of each FILE, to standard output, under the path that is
+given for it.
+
+  --compress  compress the barf with LZ4
+  --index     keep the paths in an index, and number the entries
+  --help      show this help, and exit
+]]
+
+
+-- Write a barf of the files in *args*, to standard output.
+local function barf_main(args)
+   local opts, entries = {}, {}
+   each(args, function(a)
+      if a == '--compress' or a == '--index' then
+         opts[sub(a, 3)] = true
+      elseif a == '--help' then
+         write(BARF_USAGE)
+         exit(0)
+      elseif sub(a, 1, 1) == '-' then
+         stderr:write("smush barf: unrecognized option '", a, "'\n",
+            BARF_USAGE)
+         exit(1)
+      else
+         local data, err = slurp(File(a))
+         if data == nil then
+            stderr:write('smush barf: ', err, '\n')
+            exit(1)
+         end
+         entries[#entries + 1] = {path = a, data = data}
+      end
+   end)
+   local ok, bytes = pcall(barf.pack, entries, opts)
+   if not ok then
+      stderr:write('smush barf: ', bytes, '\n')
+      exit(1)
+   end
+   write(bytes)
+end
 
 
 --- Write a single file that bundles *sources*.
@@ -272,6 +319,9 @@ have a copy of one file share the one.
 -- A source `ALIAS::MODULE` makes the module ALIAS the bundled MODULE, and
 -- there is no other source for it.
 local function main(args)
+   if args[1] == 'barf' then
+      return barf_main({unpack(args, 2)})
+   end
    local script, entry, sources, known, externals = true, nil, {}, {}, {}
    local aliases = {}
    local readable = false

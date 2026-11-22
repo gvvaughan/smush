@@ -68,6 +68,11 @@ An option that takes a value is written `--NAME=VALUE` or `--NAME VALUE`.
 
 Smush exits with an error for any other option.
 
+`smush barf [--compress] [--index] FILE... > files.barf` writes the files as
+a barf, an archive that `host/barfx.c` unpacks with nothing but a C compiler
+to build it, under the paths that are given.  `--compress` compresses the barf with
+LZ4, and `--index` keeps the paths in an index, with the entries numbered.
+
 
 ## 3. Sources
 
