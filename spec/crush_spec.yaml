@@ -141,6 +141,46 @@ specify crush:
     expect(text).to_contain 'do not fill the last pass'
     expect(status).to_be(3)
 
+- it runs the statements of a block, and what they set stays set: |
+    expect(out [[{ printf a; printf b }; printf c]]).to_be 'abc'
+    expect(out "{\n printf a\n printf b\n}\nprintf c").to_be 'abc'
+    expect(out [[{ x=1 }; printf $x]]).to_be '1'
+    expect(out [[{ }; printf a]]).to_be 'a'
+
+- it goes on after a block with || only if a command of it fails: |
+    expect(out [[{ printf a; false } || printf b]]).to_be 'ab'
+    expect(out [[{ printf a } || printf b]]).to_be 'a'
+    expect(out [[false || { printf a }]]).to_be 'a'
+
+- it redirects all that a block or a for runs, and then puts back what it replaced: |
+    expect(out [[{ printf a; printf b } > f; printf y; cat f]]).to_be 'yab'
+    expect(out [[for f in 1 2 { printf $f } > f; printf y; cat f]]).to_be 'y12'
+    expect(out [[{ sh -c 'printf e >&2' } 2> f; printf y; cat f]]).to_be 'ye'
+    expect(out [[{ printf a } >> f; { printf b } >> f; cat f]]).to_be 'ab'
+    local text, status = crushed [[{ printf x } > /no/such/dir/f; printf z]]
+    expect(text).to_contain '/no/such/dir/f'
+    expect(text).not_to_match 'z$'
+    expect(status).to_be(1)
+
+- it sets script variables with assignments on their own, that programs do not see: |
+    expect(out [[x=1; y=2; printf $x$y]]).to_be '12'
+    expect(out "x=1\ny=2\nprintf $x$y").to_be '12'
+    expect(out [[x=1; printf '<%s>' $x; sh -c 'printf "[%s]" "$x"']]).
+       to_be '<1>[]'
+
+- it sets an env for what the statement after it runs, and then removes it: |
+    local show = [[sh -c 'printf "[%s]" "$X"']]
+    expect(out('X=1 ' .. show .. '; ' .. show)).to_be '[1][]'
+    expect(out('X=1 { ' .. show .. '; ' .. show .. ' }; ' .. show)).
+       to_be '[1][1][]'
+    expect(out('X=1 for f in a b { ' .. show .. ' }; ' .. show)).
+       to_be '[1][1][]'
+    expect(out('X=1 { X=2 ' .. show .. '; ' .. show .. ' }')).to_be '[2][1]'
+    expect(out('X=[a b] ' .. show)).to_be '[a b]'
+    expect(out [[X=1 { printf '<%s>' $X }]]).to_be '<>'
+    expect(out('X=1 Y=2 { sh -c \'printf "%s%s" "$X" "$Y"\' } > f; cat f')).
+       to_be '12'
+
 - it ends with the status of the command that fails: |
     expect(select(2, crushed [[sh -c 'exit 7'; printf no]])).to_be(7)
 
@@ -149,7 +189,9 @@ specify crush:
        'a ||', '|| a', 'a ||\nb', 'x=1 || a', 'a || x=1', 'x=[a || b]',
        'for f in a {', '}', 'for f { a }', 'for in a {\n}',
        'for f in a', 'for f in a { b', 'for f in a { a || }',
-       'for f in a { b } c', 'x=1 for f in a {\n}'} do
+       'for f in a { b } c',
+       'x=1 >> foo', 'x=1 y=2', 'x=1 y=2 # c', '> f', 'printf a > f b', '{ a } c',
+       '{ a', '{ a } >', 'x=1 y=2 > f', '{ a } || ', 'for f in a { b } > f x'} do
        local out, status = crushed('printf no\n' .. bad)
        expect(status).to_be(3)
        expect(out).to_match '^%./script: 2:%d+: '

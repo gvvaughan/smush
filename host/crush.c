@@ -10,18 +10,28 @@
  *
  * Syntax:
  *
- *     script    = chain { ( NEWLINE | ';' ) chain }
- *     chain     = command { '||' command }
- *     command   = { assign } [ word { word } ] { redirect } | for
- *     for       = 'for' NAME { NAME } 'in' { word } '{' script '}'
- *     assign    = NAME '=' [ word | '[' { word } ']' ]
- *     redirect  = [ DIGIT ] ( '>' | '>>' ) word
- *     word      = part { part }
- *     part      = text | '$' NAME | '...' | "...$NAME..."
+ *     script     = line { ( NEWLINE | ';' ) line }
+ *     line       = assignment | chain
+ *     chain      = statement { '||' statement }
+ *     statement  = [ env ] ( block | command ) { redirect }
+ *     block      = '{' script '}'
+ *     command    = for | word { word }
+ *     for        = 'for' NAME { NAME } 'in' word { word } block
+ *     env        = assignment { assignment }
+ *     assignment = NAME '=' [ word | '[' { word } ']' ]
+ *     redirect   = [ DIGIT ] ( '>' | '>>' ) word
+ *     word       = part { part }
+ *     part       = text | '$' NAME | '...' | "...$NAME..."
  *
  * A `#` starts a comment, and a backslash at the end of a line
- * continues it.  An assignment on its own sets a variable for the rest
- * of the script, and one before a command sets it for that command.
+ * continues it.  An assignment on its own is a line, that sets a
+ * variable of the script for the rest of it, which programs do not
+ * see: `x=1; y=2`.  An env is assignments before a command, a block or
+ * a for, that are set in the environment of every program that it
+ * runs, as `X=1 { a; b }` does for a and b, and are then removed: an
+ * inner env overrides an outer one for what it runs, and the variables
+ * of the script are not set.  Redirections are the last words of a
+ * statement.
  *
  * Builtins:
  *
@@ -36,18 +46,22 @@
  *     run COMMAND...    write `% COMMAND...` on stderr, with the words
  *                       expanded, and then run COMMAND
  *
- * `for NAME... in WORD... {` runs the commands up to the matching `}`
- * once for each NAME... items of the expanded words, with each NAME set
- * to the next item, in order.  The `{` ends the header, and a `}` that
- * is a word of its own ends the body, after a command with a `;` or
- * without one, or on a line of its own: `for f in a b { run echo $f }`.
- * A list that is written as rows is read a row at a time, as in `for
- * file url sum in $rows {`, and one that does not fill its last row is
- * an error before the first pass.  The names stay set after the loop,
- * and a loop with no items runs nothing.  A for is a command, so it may
- * be in a chain, where `||` goes on after it if a command of the body
- * fails, and nothing may follow its `}` on that line but `;`, `||` or
- * another `}`.
+ * `{` and `}`, as words of their own, start and end a block of
+ * statements, which has the status of the last one that ran, or of the
+ * one that failed.  A block does not make a scope: what is set in it is
+ * set after it.  A `}` ends a block after a command with a `;` or
+ * without one, or on a line of its own: `{ run echo a; run echo b }`.
+ *
+ * `for NAME... in WORD... BLOCK` runs the block once for each NAME...
+ * items of the expanded words, with each NAME set to the next item, in
+ * order: `for f in a b { run echo $f }`.  A list that is written as
+ * rows is read a row at a time, as in `for file url sum in $rows {`,
+ * and one that does not fill its last row is an error before the first
+ * pass.  The names stay set after the loop, and a loop with no items
+ * runs nothing.  The redirections of a block or a for are for
+ * everything that runs in it.  Either may be in a chain, where `||` goes
+ * on after it if a command of it fails.  Nothing may follow its `}` on
+ * that line but redirections, `;`, `||` or another `}`.
  *
  * Any other command is a program found in $PATH.  A command that exits
  * with a status other than 0 ends the script with that status, unless
@@ -80,10 +94,10 @@
  *    is, and a backslash escapes `"`, `$`, `\` and a newline.  Outside
  *    quotes a backslash makes the next character literal.
  *  - There are no pipes (a lone `|`), `&`, `<`, `( )`, backticks, `$(...)`,
- *    `${...}`, `$$`, `$?`, `$#name`, `{ }` as words, or keywords such
- *    as `if` and `while`.  Crush rejects a script that has one,
- *    with its line and column, before any of it runs.  Use
- *    `sh -c '...'` for anything else.
+ *    `${...}`, `$$`, `$?`, `$#name`, `{` or `}` as the words of a command
+ *    that are not a block, or keywords such as `if` and `while`.  Crush
+ *    rejects a script that has one, with its line and column, before
+ *    any of it runs.  Use `sh -c '...'` for anything else.
  *
  * It is C99 with POSIX.1-2001 (`-D_XOPEN_SOURCE=700`), and frees
  * nothing, since it runs one script and exits.
@@ -130,31 +144,29 @@ typedef struct {
     word target;
 } redirect;
 
-typedef struct stmt stmt;
+typedef struct statement statement;
 
+/* Statements joined by `||`. */
 typedef struct {
-    stmt *item;
+    statement *item;
     size_t n;
-} block;
+} chain;
 
-/* A command, or a for, which has names, the words of its items in word,
-   and a body. */
 typedef struct {
-    assign *assign;
-    word *word;
+    chain *item;
+    size_t n;
+} script;
+
+struct statement {
+    enum { S_COMMAND, S_FOR, S_BLOCK, S_ASSIGN } kind;
+    assign *assign;  /* S_ASSIGN: the one to set; else the env of it */
+    word *word;  /* S_COMMAND: its words; S_FOR: those of its items */
     redirect *redirect;
     size_t nassign, nword, nredirect;
-    char **name;
+    char **name;  /* S_FOR: what each pass sets */
     size_t nname;
-    block body;
+    script body;  /* S_FOR and S_BLOCK */
     const char *at;  /* where it starts, for error messages */
-} command;
-
-/* A chain of commands, each of which runs only if the one before it
-   fails. */
-struct stmt {
-    command *chain;
-    size_t nchain;
 };
 
 typedef struct {
@@ -162,7 +174,14 @@ typedef struct {
     list value;
 } variable;
 
+/* A variable that is set in the environment of what runs. */
+typedef struct {
+    char *name, *value;
+} env;
+
 static const char *script_name = "crush", *text;
+static env *envs;
+static size_t nenvs;
 static variable *vars;
 static size_t nvars;
 static int status;
@@ -250,7 +269,7 @@ parseerror(const char *at, const char *errmsg)
 
 /* Parsing. */
 
-static const char *keywords[] = {"if", "else", "for", "in", "while",
+static const char *keywords[] = {"if", "else", "in", "while",
     "switch", "case", "fn", NULL};
 
 
@@ -442,177 +461,253 @@ is_keyword(const char *tz, const char *kw)
 }
 
 
-/* How many fors the parser is in the body of. */
+/* How many blocks the parser is in the body of. */
 static int nesting;
 
 
-/* Is TZ at the end of a command: at the end of the script, or at a
-   newline, a `;`, a `||`, or in a for the `}` that ends it? */
+/* Is TZ at the end of a line: at the end of the script, or at a
+   newline, a `;`, or in a block the `}` that ends it? */
 static int
-at_end(const char *tz)
+at_eol(const char *tz)
 {
     return !*tz || *tz == '\n' || *tz == ';'
-           || (tz[0] == '|' && tz[1] == '|')
            || (nesting && is_keyword(tz, "}"));
 }
 
 
-/* Is the command C a for, or has it a word, and so is not only
-   assignments? */
+/* Is TZ at the end of a statement: at the end of a line, or at a `||`? */
 static int
-runs(const command *c)
+at_end(const char *tz)
 {
-    return c->nname || c->nword;
+    return at_eol(tz) || (tz[0] == '|' && tz[1] == '|');
 }
 
 
-static const char *parse_block(const char *tz, block *b);
+/* Does a redirection start at TZ: with digits, and then a `>`? */
+static int
+at_redirect(const char *tz)
+{
+    while (isdigit((unsigned char) *tz))
+        tz++;
+    return *tz == '>';
+}
 
 
-/* Parse the for at TZ into CMD, with its body, and return where it
-   ends, after its }. */
+static const char *parse_script(const char *tz, script *sc);
+
+
+/* Parse the redirections at TZ into S, and return where they end. */
 static const char *
-parse_for(const char *tz, command *cmd)
+parse_redirects(const char *tz, statement *s)
+{
+    const char *digits;
+    redirect *r;
+
+    for (tz = skip_blanks(tz); at_redirect(tz); tz = skip_blanks(tz)) {
+        r = grow(&s->redirect, &s->nredirect, sizeof *r);
+        for (digits = tz; isdigit((unsigned char) *digits); )
+            digits++;
+        r->fd = digits == tz ? 1 : atoi(tz);
+        r->append = digits[1] == '>';
+        tz = skip_blanks(digits + 1 + r->append);
+        if (at_end(tz) || *tz == '>')
+            exit(parseerror(tz, "a redirection has the name of a file"));
+        tz = parse_word(&r->target, tz, 0);
+    }
+    return tz;
+}
+
+
+/* Parse the assignment at TZ into S, and return where it ends. */
+static const char *
+parse_assignment(const char *tz, statement *s)
+{
+    const char *eq = assignment(tz);
+    assign *a = grow(&s->assign, &s->nassign, sizeof *a);
+
+    a->name = xmemdupz(tz, (size_t) (eq - tz));
+    return skip_blanks(parse_value(a, eq + 1));
+}
+
+
+/* Parse the assignments at TZ into S, and return where they end. */
+static const char *
+parse_env(const char *tz, statement *s)
+{
+    for (tz = skip_blanks(tz); assignment(tz); )
+        tz = parse_assignment(tz, s);
+    return tz;
+}
+
+
+/* Parse the block at TZ, that starts with a `{`, into the body of S, and
+   return where its `}` ends. */
+static const char *
+parse_block(const char *tz, statement *s)
+{
+    nesting++;
+    tz = parse_script(tz + 1, &s->body);
+    nesting--;
+    return tz;
+}
+
+
+/* Parse the for at TZ into S, with its body, and return where that
+   ends. */
+static const char *
+parse_for(const char *tz, statement *s)
 {
     word w, *item;
     const char *name;
 
+    s->kind = S_FOR;
     for (tz += 3;;) {
         tz = skip_blanks(tz);
         if (at_end(tz) || strchr(">{}", *tz))
-            exit(parseerror(tz, "for needs: for NAME in LIST {"));
+            exit(parseerror(tz, "for needs: for NAME in LIST BLOCK"));
         memset(&w, 0, sizeof w);
         name = tz;
         tz = parse_word(&w, tz, 0);
         if (!w.bare || w.n != 1)
             exit(parseerror(name, "for needs a name before in"));
         if (!strcmp(w.part[0].text, "in")) {
-            if (!cmd->nname)
+            if (!s->nname)
                 exit(parseerror(name, "for needs a name before in"));
             break;
         }
         for (name = w.part[0].text; name_char((unsigned char) *name); )
             name++;
         if (*name)
-            exit(parseerror(cmd->at, "for needs a name before in"));
-        *(char **) grow(&cmd->name, &cmd->nname, sizeof *cmd->name)
+            exit(parseerror(s->at, "for needs a name before in"));
+        *(char **) grow(&s->name, &s->nname, sizeof *s->name)
             = w.part[0].text;
     }
     for (;;) {
         tz = skip_blanks(tz);
+        if (is_keyword(tz, "{"))
+            return parse_block(tz, s);
         if (at_end(tz) || strchr(">}", *tz))
-            exit(parseerror(tz, "for needs a { after its list"));
-        item = grow(&cmd->word, &cmd->nword, sizeof *item);
+            exit(parseerror(tz, "for needs a block { ... } after its "
+                                "list"));
+        item = grow(&s->word, &s->nword, sizeof *item);
         tz = parse_word(item, tz, 0);
-        if (item->bare && item->n == 1
-            && !strcmp(item->part[0].text, "{")) {
-            cmd->nword--;
-            break;
-        }
     }
-    nesting++;
-    tz = skip_blanks(parse_block(tz, &cmd->body));
-    nesting--;
-    if (!at_end(tz))
-        exit(parseerror(tz, "nothing is after a } on its line"));
-    return tz;
 }
 
 
-/* Parse the words, assignments and redirections of CMD from TZ, up to
-   the end of the command, and return where that is.  A command that
-   starts with `for` is a for. */
+/* Parse the command at TZ into S: a for, or words, and return where it
+   ends. */
 static const char *
-parse_command(const char *tz, command *cmd)
+parse_command(const char *tz, statement *s)
 {
-    const char *digits;
+    const char *start, **k;
+    word *w;
 
-    cmd->at = tz = skip_blanks(tz);
     if (is_keyword(tz, "for"))
-        return parse_for(tz, cmd);
-    while (!at_end(tz)) {
-        for (digits = tz; isdigit((unsigned char) *digits); )
-            digits++;
-        if (*digits == '>') {
-            redirect *r = grow(&cmd->redirect, &cmd->nredirect,
-                               sizeof *r);
-            r->fd = digits == tz ? 1 : atoi(tz);
-            r->append = digits[1] == '>';
-            tz = skip_blanks(digits + 1 + r->append);
-            if (at_end(tz) || *tz == '>')
-                exit(parseerror(tz,
-                                "a redirection has the name of a file"));
-            tz = parse_word(&r->target, tz, 0);
-        } else if (!cmd->nword && assignment(tz)) {
-            const char *eq = assignment(tz);
-            assign *a = grow(&cmd->assign, &cmd->nassign, sizeof *a);
-            a->name = xmemdupz(tz, (size_t) (eq - tz));
-            tz = parse_value(a, eq + 1);
-        } else {
-            word *w = grow(&cmd->word, &cmd->nword, sizeof *w);
-            const char *start = tz, **k;
-            tz = parse_word(w, tz, 0);
-            if (cmd->nword == 1 && w->bare && w->n == 1) {
-                for (k = keywords; *k; k++)
-                    if (!strcmp(*k, w->part[0].text))
-                        exit(parseerror(start,
-                                        "a keyword is not in "
-                                        "crush"));
-                if (!strcmp("{", w->part[0].text)
-                    || !strcmp("}", w->part[0].text))
-                    exit(parseerror(start,
-                                    "a { or } that is a word "
-                                    "is not in crush"));
-            }
+        return parse_for(tz, s);
+    if (at_end(tz) || at_redirect(tz))
+        exit(parseerror(tz, "a command, a block or a for is needed "
+                            "here"));
+    do {
+        w = grow(&s->word, &s->nword, sizeof *w);
+        start = tz;
+        tz = parse_word(w, tz, 0);
+        if (s->nword == 1 && w->bare && w->n == 1) {
+            for (k = keywords; *k; k++)
+                if (!strcmp(*k, w->part[0].text))
+                    exit(parseerror(start, "a keyword is not in crush"));
+            if (!strcmp("{", w->part[0].text)
+                || !strcmp("}", w->part[0].text))
+                exit(parseerror(start, "a { or } that is a word is not "
+                                       "in crush"));
         }
         tz = skip_blanks(tz);
-    }
+    } while (!at_end(tz) && !at_redirect(tz));
     return tz;
 }
 
 
-/* Parse the chain of commands joined by || at TZ into S, and return
-   where it ends. */
+/* Parse the statement at TZ into S: a block or a command, with an env
+   before it and redirections after it, and return where it ends. */
 static const char *
-parse_chain(const char *tz, stmt *s)
+parse_statement(const char *tz, statement *s)
 {
-    command *cmd;
+    s->at = tz = skip_blanks(tz);
+    tz = parse_env(tz, s);
+    if (is_keyword(tz, "{")) {
+        s->kind = S_BLOCK;
+        tz = parse_block(tz, s);
+    } else
+        tz = parse_command(tz, s);
+    tz = parse_redirects(tz, s);
+    if (!at_end(tz))
+        exit(parseerror(tz, s->kind == S_COMMAND
+                            ? "a redirection is the last of a command"
+                            : "only a redirection is after a } on its "
+                              "line"));
+    return tz;
+}
 
+
+/* Parse the statements joined by || at TZ into C, and return where they
+   end. */
+static const char *
+parse_chain(const char *tz, chain *c)
+{
     for (;;) {
-        cmd = grow(&s->chain, &s->nchain, sizeof *cmd);
-        tz = parse_command(tz, cmd);
-        if (s->nchain > 1 && !runs(cmd))
-            exit(parseerror(cmd->at, "|| needs a command after it"));
+        tz = parse_statement(tz, grow(&c->item, &c->n, sizeof *c->item));
         if (*tz != '|')
             return tz;
-        if (!runs(cmd))
-            exit(parseerror(tz, "|| needs a command before it"));
         tz += 2;
     }
 }
 
 
-/* Parse the statements at TZ into B, up to the end of the script, or
-   in a for up to the } that ends it, and return where that ends. */
+/* Parse the line at TZ into C: an assignment on its own, or else a
+   chain, which has an env if it starts with assignments, and return
+   where it ends.  An assignment is read and kept only if it ends the
+   line, and is read again if it does not. */
 static const char *
-parse_block(const char *tz, block *b)
+parse_line(const char *tz, chain *c)
+{
+    statement a;
+    const char *end;
+
+    if (assignment(tz)) {
+        memset(&a, 0, sizeof a);
+        a.kind = S_ASSIGN;
+        a.at = tz;
+        end = parse_assignment(tz, &a);
+        if (at_eol(end)) {
+            *(statement *) grow(&c->item, &c->n, sizeof a) = a;
+            return end;
+        }
+    }
+    return parse_chain(tz, c);
+}
+
+
+/* Parse the lines at TZ into SC, up to the end of the text, or in a
+   block up to its `}`, and return where that ends. */
+static const char *
+parse_script(const char *tz, script *sc)
 {
     for (;;) {
         tz = skip_blanks(tz);
         if (!*tz) {
             if (nesting)
-                exit(parseerror(tz, "a for that has no } to end it"));
+                exit(parseerror(tz, "a { that has no } to end it"));
             return tz;
         }
         if (is_keyword(tz, "}")) {
             if (!nesting)
-                exit(parseerror(tz, "a } that does not close a for"));
+                exit(parseerror(tz, "a } that does not end a block"));
             return tz + 1;
         }
         if (*tz == '\n' || *tz == ';')
             tz++;
         else
-            tz = parse_chain(tz, grow(&b->item, &b->n, sizeof *b->item));
+            tz = parse_line(tz, grow(&sc->item, &sc->n, sizeof *sc->item));
     }
 }
 
@@ -1019,9 +1114,73 @@ show(list argv)
 }
 
 
-/* Run the command C, and return its status. */
+/* Put back the descriptors that the first N redirections of S replaced,
+   which are kept in SAVED, if it is not NULL, with -1 for one that was
+   not open. */
+static void
+undo_redirects(const statement *s, const int *saved, size_t n)
+{
+    if (!saved)
+        return;
+    while (n-- > 0) {
+        if (saved[n] < 0)
+            close(s->redirect[n].fd);
+        else {
+            dup2(saved[n], s->redirect[n].fd);
+            close(saved[n]);
+        }
+    }
+}
+
+
+/* Open the files of the redirections of S as the descriptors that they
+   are for, and keep what they replace in SAVED, if it is not NULL, for
+   undo_redirects.  Return 0, or 1 after reporting what went wrong, with
+   what was done undone. */
 static int
-run(const command *c)
+apply_redirects(const statement *s, int *saved)
+{
+    list target;
+    size_t i;
+    int fd, to;
+
+    for (i = 0; i < s->nredirect; i++) {
+        to = s->redirect[i].fd;
+        target = expand(&s->redirect[i].target, s->at);
+        if (target.n != 1) {
+            fprintf(stderr, "crush: a redirection has one file\n");
+            break;
+        }
+        fd = open(target.item[0],
+                  O_WRONLY | O_CREAT | (s->redirect[i].append
+                                        ? O_APPEND : O_TRUNC), 0666);
+        if (fd < 0) {
+            fprintf(stderr, "crush: %s: %s\n", target.item[0],
+                    strerror(errno));
+            break;
+        }
+        if (saved)
+            saved[i] = fcntl(to, F_DUPFD_CLOEXEC, 3);
+        if (dup2(fd, to) < 0) {
+            fprintf(stderr, "crush: %s: %s\n", target.item[0],
+                    strerror(errno));
+            if (saved && saved[i] >= 0)
+                close(saved[i]);
+            close(fd);
+            break;
+        }
+        if (fd != to)
+            close(fd);
+    }
+    if (i < s->nredirect)
+        undo_redirects(s, saved, i);
+    return i < s->nredirect;
+}
+
+
+/* Run the command S, and return its status. */
+static int
+run(const statement *c)
 {
     list argv = expand_all(c->word, c->nword, c->at);
     pid_t pid;
@@ -1060,30 +1219,10 @@ run(const command *c)
         return 1;
     }
     if (pid == 0) {
-        for (i = 0; i < c->nassign; i++) {
-            list v = expand_all(c->assign[i].value, c->assign[i].n,
-                                c->at);
-            setenv(c->assign[i].name, joinz(v), 1);
-        }
-        for (i = 0; i < c->nredirect; i++) {
-            list target = expand(&c->redirect[i].target, c->at);
-            int fd;
-            if (target.n != 1) {
-                fprintf(stderr, "crush: a redirection has one file\n");
-                _exit(1);
-            }
-            fd = open(target.item[0],
-                      O_WRONLY | O_CREAT | (c->redirect[i].append
-                                            ? O_APPEND : O_TRUNC),
-                                                0666);
-            if (fd < 0 || dup2(fd, c->redirect[i].fd) < 0) {
-                fprintf(stderr, "crush: %s: %s\n", target.item[0],
-                        strerror(errno));
-                _exit(1);
-            }
-            if (fd != c->redirect[i].fd)
-                close(fd);
-        }
+        for (i = 0; i < nenvs; i++)
+            setenv(envs[i].name, envs[i].value, 1);
+        if (apply_redirects(c, NULL))
+            _exit(1);
         if (!strcmp(argv.item[0], "embed"))
             _exit(embed(argv.item, argv.n));
         if (!strcmp(argv.item[0], "sha256"))
@@ -1100,60 +1239,90 @@ run(const command *c)
 }
 
 
-static int run_block(const block *b);
+static int run_script(const script *sc);
 
 
-/* Run the for C, once for each pass of its names, and return the status
+/* Run the for S, once for each pass of its names, and return the status
    of the last pass. */
 static int
-run_for(const command *c)
+run_for(const statement *s)
 {
-    list items = expand_all(c->word, c->nword, c->at);
+    list items = expand_all(s->word, s->nword, s->at);
     size_t i, k;
 
-    if (items.n % c->nname)
-        exit(parseerror(c->at, "for has items that do not fill the "
+    if (items.n % s->nname)
+        exit(parseerror(s->at, "for has items that do not fill the "
                                "last pass of its names"));
-    for (i = 0; i < items.n; i += c->nname) {
-        for (k = 0; k < c->nname; k++)
-            set(c->name[k], one(items.item[i + k]));
-        if (run_block(&c->body))
+    for (i = 0; i < items.n; i += s->nname) {
+        for (k = 0; k < s->nname; k++)
+            set(s->name[k], one(items.item[i + k]));
+        if (run_script(&s->body))
             return status;
     }
     return 0;
 }
 
 
-/* Run the chain of commands S until one works, and return the status of
-   the last one. */
+/* Run the statement S, and return its status. */
 static int
-run_stmt(const stmt *s)
+run_statement(const statement *s)
 {
-    size_t i, j;
+    size_t i, mark = nenvs;
+    int *saved, st;
+    env *e;
 
-    for (i = 0; i < s->nchain; i++) {
-        const command *c = &s->chain[i];
-        if (runs(c)) {
-            if (!(status = c->nname ? run_for(c) : run(c)))
-                return 0;
-            continue;
-        }
-        for (j = 0; j < c->nassign; j++)
-            set(c->assign[j].name,
-                expand_all(c->assign[j].value, c->assign[j].n, c->at));
+    if (s->kind == S_ASSIGN) {
+        for (i = 0; i < s->nassign; i++)
+            set(s->assign[i].name,
+                expand_all(s->assign[i].value, s->assign[i].n, s->at));
+        return 0;
     }
+    for (i = 0; i < s->nassign; i++) {
+        e = grow(&envs, &nenvs, sizeof *e);
+        e->name = s->assign[i].name;
+        e->value = joinz(expand_all(s->assign[i].value, s->assign[i].n,
+                                    s->at));
+    }
+    saved = xrealloc(NULL, (s->nredirect + 1) * sizeof *saved);
+    if (s->kind == S_COMMAND)
+        st = run(s);
+    else {
+        fflush(NULL);
+        if (apply_redirects(s, saved))
+            st = 1;
+        else {
+            st = s->kind == S_FOR ? run_for(s) : run_script(&s->body);
+            fflush(NULL);
+            undo_redirects(s, saved, s->nredirect);
+        }
+    }
+    nenvs = mark;
+    return st;
+}
+
+
+/* Run the statements of C until one works, and return the status of the
+   last one. */
+static int
+run_chain(const chain *c)
+{
+    size_t i;
+
+    for (i = 0; i < c->n; i++)
+        if (!(status = run_statement(&c->item[i])))
+            return 0;
     return status;
 }
 
 
-/* Run the statements of B, up to one that fails, and return its status. */
+/* Run the chains of SC, up to one that fails, and return its status. */
 static int
-run_block(const block *b)
+run_script(const script *sc)
 {
     size_t i;
 
-    for (i = 0; i < b->n; i++)
-        if (run_stmt(&b->item[i]))
+    for (i = 0; i < sc->n; i++)
+        if (run_chain(&sc->item[i]))
             return status;
     return 0;
 }
@@ -1162,7 +1331,7 @@ run_block(const block *b)
 int
 main(int argc, char **argv)
 {
-    block top = {NULL, 0};
+    script top = {NULL, 0};
     FILE *f;
     char *buf;
     long size = 0;
@@ -1183,6 +1352,6 @@ main(int argc, char **argv)
         exit(parseerror(text + strlen(text),
                         "a NUL is not in a script"));
 
-    parse_block(text, &top);
-    return run_block(&top);
+    parse_script(text, &top);
+    return run_script(&top);
 }
