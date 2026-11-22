@@ -12,7 +12,8 @@
  *
  *     script    = chain { ( NEWLINE | ';' ) chain }
  *     chain     = command { '||' command }
- *     command   = { assign } [ word { word } ] { redirect }
+ *     command   = { assign } [ word { word } ] { redirect } | for
+ *     for       = 'for' NAME { NAME } 'in' { word } '{' script '}'
  *     assign    = NAME '=' [ word | '[' { word } ']' ]
  *     redirect  = [ DIGIT ] ( '>' | '>>' ) word
  *     word      = part { part }
@@ -34,6 +35,19 @@
  *                       `HASH  FILE`, the way sha256sum does
  *     run COMMAND...    write `% COMMAND...` on stderr, with the words
  *                       expanded, and then run COMMAND
+ *
+ * `for NAME... in WORD... {` runs the commands up to the matching `}`
+ * once for each NAME... items of the expanded words, with each NAME set
+ * to the next item, in order.  The `{` ends the header, and a `}` that
+ * is a word of its own ends the body, after a command with a `;` or
+ * without one, or on a line of its own: `for f in a b { run echo $f }`.
+ * A list that is written as rows is read a row at a time, as in `for
+ * file url sum in $rows {`, and one that does not fill its last row is
+ * an error before the first pass.  The names stay set after the loop,
+ * and a loop with no items runs nothing.  A for is a command, so it may
+ * be in a chain, where `||` goes on after it if a command of the body
+ * fails, and nothing may follow its `}` on that line but `;`, `||` or
+ * another `}`.
  *
  * Any other command is a program found in $PATH.  A command that exits
  * with a status other than 0 ends the script with that status, unless
@@ -67,7 +81,7 @@
  *    quotes a backslash makes the next character literal.
  *  - There are no pipes (a lone `|`), `&`, `<`, `( )`, backticks, `$(...)`,
  *    `${...}`, `$$`, `$?`, `$#name`, `{ }` as words, or keywords such
- *    as `if`, `for` and `while`.  Crush rejects a script that has one,
+ *    as `if` and `while`.  Crush rejects a script that has one,
  *    with its line and column, before any of it runs.  Use
  *    `sh -c '...'` for anything else.
  *
@@ -116,25 +130,32 @@ typedef struct {
     word target;
 } redirect;
 
-typedef struct {
-    assign *assign;
-    word *word;
-    redirect *redirect;
-    size_t nassign, nword, nredirect;
-    const char *at;  /* where it starts, for error messages */
-} command;
-
-/* A chain of commands, each of which runs only if the one before it
-   fails. */
-typedef struct {
-    command *chain;
-    size_t nchain;
-} stmt;
+typedef struct stmt stmt;
 
 typedef struct {
     stmt *item;
     size_t n;
 } block;
+
+/* A command, or a for, which has names, the words of its items in word,
+   and a body. */
+typedef struct {
+    assign *assign;
+    word *word;
+    redirect *redirect;
+    size_t nassign, nword, nredirect;
+    char **name;
+    size_t nname;
+    block body;
+    const char *at;  /* where it starts, for error messages */
+} command;
+
+/* A chain of commands, each of which runs only if the one before it
+   fails. */
+struct stmt {
+    command *chain;
+    size_t nchain;
+};
 
 typedef struct {
     char *name;
@@ -411,21 +432,104 @@ parse_value(assign *a, const char *tz)
 
 
 static int
+is_keyword(const char *tz, const char *kw)
+{
+    size_t n = strlen(kw);
+
+    return !strncmp(tz, kw, n)
+           && (!tz[n] || blank((unsigned char) tz[n])
+               || strchr("\n;", tz[n]));
+}
+
+
+/* How many fors the parser is in the body of. */
+static int nesting;
+
+
+/* Is TZ at the end of a command: at the end of the script, or at a
+   newline, a `;`, a `||`, or in a for the `}` that ends it? */
+static int
 at_end(const char *tz)
 {
     return !*tz || *tz == '\n' || *tz == ';'
-           || (tz[0] == '|' && tz[1] == '|');
+           || (tz[0] == '|' && tz[1] == '|')
+           || (nesting && is_keyword(tz, "}"));
+}
+
+
+/* Is the command C a for, or has it a word, and so is not only
+   assignments? */
+static int
+runs(const command *c)
+{
+    return c->nname || c->nword;
+}
+
+
+static const char *parse_block(const char *tz, block *b);
+
+
+/* Parse the for at TZ into CMD, with its body, and return where it
+   ends, after its }. */
+static const char *
+parse_for(const char *tz, command *cmd)
+{
+    word w, *item;
+    const char *name;
+
+    for (tz += 3;;) {
+        tz = skip_blanks(tz);
+        if (at_end(tz) || strchr(">{}", *tz))
+            exit(parseerror(tz, "for needs: for NAME in LIST {"));
+        memset(&w, 0, sizeof w);
+        name = tz;
+        tz = parse_word(&w, tz, 0);
+        if (!w.bare || w.n != 1)
+            exit(parseerror(name, "for needs a name before in"));
+        if (!strcmp(w.part[0].text, "in")) {
+            if (!cmd->nname)
+                exit(parseerror(name, "for needs a name before in"));
+            break;
+        }
+        for (name = w.part[0].text; name_char((unsigned char) *name); )
+            name++;
+        if (*name)
+            exit(parseerror(cmd->at, "for needs a name before in"));
+        *(char **) grow(&cmd->name, &cmd->nname, sizeof *cmd->name)
+            = w.part[0].text;
+    }
+    for (;;) {
+        tz = skip_blanks(tz);
+        if (at_end(tz) || strchr(">}", *tz))
+            exit(parseerror(tz, "for needs a { after its list"));
+        item = grow(&cmd->word, &cmd->nword, sizeof *item);
+        tz = parse_word(item, tz, 0);
+        if (item->bare && item->n == 1
+            && !strcmp(item->part[0].text, "{")) {
+            cmd->nword--;
+            break;
+        }
+    }
+    nesting++;
+    tz = skip_blanks(parse_block(tz, &cmd->body));
+    nesting--;
+    if (!at_end(tz))
+        exit(parseerror(tz, "nothing is after a } on its line"));
+    return tz;
 }
 
 
 /* Parse the words, assignments and redirections of CMD from TZ, up to
-   the end of the command, and return where that is. */
+   the end of the command, and return where that is.  A command that
+   starts with `for` is a for. */
 static const char *
 parse_command(const char *tz, command *cmd)
 {
     const char *digits;
 
     cmd->at = tz = skip_blanks(tz);
+    if (is_keyword(tz, "for"))
+        return parse_for(tz, cmd);
     while (!at_end(tz)) {
         for (digits = tz; isdigit((unsigned char) *digits); )
             digits++;
@@ -477,25 +581,34 @@ parse_chain(const char *tz, stmt *s)
     for (;;) {
         cmd = grow(&s->chain, &s->nchain, sizeof *cmd);
         tz = parse_command(tz, cmd);
-        if (s->nchain > 1 && !cmd->nword)
+        if (s->nchain > 1 && !runs(cmd))
             exit(parseerror(cmd->at, "|| needs a command after it"));
         if (*tz != '|')
             return tz;
-        if (!cmd->nword)
+        if (!runs(cmd))
             exit(parseerror(tz, "|| needs a command before it"));
         tz += 2;
     }
 }
 
 
-/* Parse the statements of the script at TZ into B. */
-static void
+/* Parse the statements at TZ into B, up to the end of the script, or
+   in a for up to the } that ends it, and return where that ends. */
+static const char *
 parse_block(const char *tz, block *b)
 {
     for (;;) {
         tz = skip_blanks(tz);
-        if (!*tz)
-            return;
+        if (!*tz) {
+            if (nesting)
+                exit(parseerror(tz, "a for that has no } to end it"));
+            return tz;
+        }
+        if (is_keyword(tz, "}")) {
+            if (!nesting)
+                exit(parseerror(tz, "a } that does not close a for"));
+            return tz + 1;
+        }
         if (*tz == '\n' || *tz == ';')
             tz++;
         else
@@ -987,7 +1100,32 @@ run(const command *c)
 }
 
 
-/* Run the statement S, a chain of commands, and return its status. */
+static int run_block(const block *b);
+
+
+/* Run the for C, once for each pass of its names, and return the status
+   of the last pass. */
+static int
+run_for(const command *c)
+{
+    list items = expand_all(c->word, c->nword, c->at);
+    size_t i, k;
+
+    if (items.n % c->nname)
+        exit(parseerror(c->at, "for has items that do not fill the "
+                               "last pass of its names"));
+    for (i = 0; i < items.n; i += c->nname) {
+        for (k = 0; k < c->nname; k++)
+            set(c->name[k], one(items.item[i + k]));
+        if (run_block(&c->body))
+            return status;
+    }
+    return 0;
+}
+
+
+/* Run the chain of commands S until one works, and return the status of
+   the last one. */
 static int
 run_stmt(const stmt *s)
 {
@@ -995,8 +1133,8 @@ run_stmt(const stmt *s)
 
     for (i = 0; i < s->nchain; i++) {
         const command *c = &s->chain[i];
-        if (c->nword) {
-            if (!(status = run(c)))
+        if (runs(c)) {
+            if (!(status = c->nname ? run_for(c) : run(c)))
                 return 0;
             continue;
         }
@@ -1008,11 +1146,23 @@ run_stmt(const stmt *s)
 }
 
 
+/* Run the statements of B, up to one that fails, and return its status. */
+static int
+run_block(const block *b)
+{
+    size_t i;
+
+    for (i = 0; i < b->n; i++)
+        if (run_stmt(&b->item[i]))
+            return status;
+    return 0;
+}
+
+
 int
 main(int argc, char **argv)
 {
     block top = {NULL, 0};
-    size_t i;
     FILE *f;
     char *buf;
     long size = 0;
@@ -1034,8 +1184,5 @@ main(int argc, char **argv)
                         "a NUL is not in a script"));
 
     parse_block(text, &top);
-    for (i = 0; i < top.n; i++)
-        if (run_stmt(&top.item[i]))
-            return status;
-    return 0;
+    return run_block(&top);
 }
