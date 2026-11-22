@@ -13,8 +13,9 @@
     and with an index of the paths.
 
   - `smush crush BOOTSTRAP` runs a bootstrap script with crush, built from
-    `host/crush.c`, in a staging directory, and writes a compressed barf of
-    the files that it leaves below `barfz` there.
+    `host/crush.c` once and kept in `$XDG_CACHE_HOME/smush`, in a staging
+    directory, and writes a compressed barf of the files that it leaves
+    below `barfz` there.
 
 
 ## Noteworthy changes in release 0.4 (2026-10-29) [stable]

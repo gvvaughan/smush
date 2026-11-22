@@ -341,6 +341,20 @@ specify smush:
       expect(absolute.errout).to_contain 'is absolute'
 
 - describe crush:
+  - before: |
+      -- Keep what is built in a directory of its own, and not in the cache
+      -- of whoever runs the specs.
+      setenv = require 'posix.stdlib'.setenv
+      was_cache, was_path = os.getenv 'XDG_CACHE_HOME', os.getenv 'PATH'
+      cache = os.tmpname()
+      os.remove(cache)
+      assert(os.execute('mkdir ' .. cache))
+      setenv('XDG_CACHE_HOME', cache)
+  - after: |
+      setenv('XDG_CACHE_HOME', was_cache)
+      setenv('PATH', was_path)
+      os.execute('rm -rf ' .. cache)
+
   - it writes a compressed barf of the files that the bootstrap leaves in barfz: |
       local dir = os.tmpname()
       os.remove(dir)
@@ -364,9 +378,56 @@ specify smush:
       expect(got.status).to_be(0)
       local staging = got.errout:match 'kept (%S+)'
       expect(staging).not_to_be(nil)
-      expect(io.open(staging .. '/crush')).not_to_be(nil)
       expect(io.open(staging .. '/barfz/where')).not_to_be(nil)
       os.execute('rm -rf ' .. staging)
+
+  - it builds crush once, and keeps it in the cache for every later run: |
+      local dir = os.tmpname()
+      os.remove(dir)
+      assert(os.execute('mkdir ' .. dir))
+      spit(dir .. '/bootstrap', 'echo hello > barfz/x\n')
+      local first = smush('.', 'crush', dir .. '/bootstrap')
+      local kept = io.popen('ls ' .. cache .. '/smush'):read '*a'
+      local second = smush('.', 'crush', dir .. '/bootstrap')
+      os.execute('rm -rf ' .. dir)
+      expect(first.status).to_be(0)
+      expect(first.errout).to_contain 'building crush, once'
+      expect(kept).to_match '^crush%-%d+%-%d+%-[%w_.-]+\n$'
+      expect(second.status).to_be(0)
+      expect(second.errout).not_to_contain 'building crush'
+      expect(second.output).to_be(first.output)
+      expect(io.popen('ls ' .. cache .. '/smush | wc -l'):read '*n').to_be(1)
+
+  - it builds crush in the staging directory if it cannot keep it: |
+      local dir = os.tmpname()
+      os.remove(dir)
+      assert(os.execute('mkdir ' .. dir))
+      spit(dir .. '/bootstrap', 'echo hello > barfz/x\n')
+      -- A file is in the way of the directory.
+      spit(cache .. '/smush', 'not a directory')
+      local got = smush('.', 'crush', '--keep', dir .. '/bootstrap')
+      os.execute('rm -rf ' .. dir)
+      expect(got.status).to_be(0)
+      local staging = got.errout:match 'kept (%S+)'
+      expect(io.open(staging .. '/crush')).not_to_be(nil)
+      os.execute('rm -rf ' .. staging)
+
+  - it runs the crush that it built, and not one that is on the path: |
+      local dir = os.tmpname()
+      os.remove(dir)
+      assert(os.execute('mkdir ' .. dir .. ' ' .. dir .. '/bin'))
+      spit(dir .. '/bin/crush', '#!/bin/sh\necho unrelated\nexit 9\n')
+      assert(os.execute('chmod 755 ' .. dir .. '/bin/crush'))
+      spit(dir .. '/bootstrap', 'echo hello > barfz/x\n')
+      setenv('PATH', dir .. '/bin:' .. was_path)
+      local first = smush('.', 'crush', dir .. '/bootstrap')
+      local second = smush('.', 'crush', dir .. '/bootstrap')
+      os.execute('rm -rf ' .. dir)
+      for _, got in ipairs {first, second} do
+         expect(got.status).to_be(0)
+         expect(got.errout).not_to_contain 'unrelated'
+         expect(got.output:sub(1, 9)).to_be '!<barfz>\n'
+      end
 
   - it fails, with nothing on standard output, if the bootstrap does: |
       local dir = os.tmpname()

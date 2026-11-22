@@ -23,11 +23,13 @@ local _context = require 'std.prototype.contextmanager'
 local _std = require 'std.functional.init'
 
 local _ENV = require 'std.normalize' {
+   'io.open',
    'io.popen',
    'io.stderr',
    'io.write',
    'os.execute',
    'os.exit',
+   'os.getenv',
    'package',
    'package.searchpath',
    'string.find',
@@ -291,7 +293,8 @@ Build crush, make a staging directory with an empty directory barfz in it,
 and run the script BOOTSTRAP there with crush.  Write a compressed barf of
 the files that it leaves below barfz to standard output.  What the script
 writes to its standard output goes to standard error, and the staging
-directory is removed at the end.
+directory is removed at the end.  Crush is built once, and kept in
+$XDG_CACHE_HOME/smush, or ~/.cache/smush, for every later run.
 
   --keep  keep the staging directory, and show where it is
   --help  show this help, and exit
@@ -362,6 +365,81 @@ local function files_below(dir)
 end
 
 
+-- The directory that the programs that smush builds are kept in, so that
+-- each is built once, or nil if there is no absolute path for it.
+local function cache_dir()
+   local xdg, home = getenv 'XDG_CACHE_HOME', getenv 'HOME'
+   if xdg and sub(xdg, 1, 1) == '/' then
+      return xdg .. '/smush'
+   elseif home and sub(home, 1, 1) == '/' then
+      return home .. '/.cache/smush'
+   end
+end
+
+
+-- A name for the program built from the file *source*, that is the same for
+-- the same text on the same system and kind of machine.  It is made of the
+-- `cksum` of the text, which is in every POSIX system, and the names that
+-- `uname` gives, and is nil if there is none.
+local function crush_key(source)
+   local crc, size = match(line_of('cksum < ' .. quoted(source)) or '',
+                           '^(%d+) (%d+)')
+   local system, machine = line_of 'uname -s', line_of 'uname -m'
+   if crc and system and machine then
+      return (gsub(format('%s-%s-%s-%s', crc, size, system, machine),
+                   '[^%w_.-]', '_'))
+   end
+end
+
+
+-- Compile the file *source* into the program *out*, and whether it worked.
+local function compile_crush(source, out)
+   return succeeded(execute(format(
+      '${CC:-cc} ${CFLAGS} ${CPPFLAGS} -D_XOPEN_SOURCE=700 -o %s %s',
+      quoted(out), quoted(source))))
+end
+
+
+-- The path of a crush built from the file *source*, or nil if it cannot be
+-- built.  It is built once and kept in the cache, where every later run
+-- finds it by its path, so that a program called crush that is somewhere
+-- else is never run in its place.  If it cannot be kept there, it is built
+-- in the directory *dir*, and goes when that does.
+local function crush_program(source, dir)
+   local cache, key = cache_dir(), crush_key(source)
+   local kept, tmp
+   if cache and key then
+      kept = cache .. '/crush-' .. key
+      local found = open(kept)
+      if found then
+         found:close()
+         return kept
+      end
+      if succeeded(execute('mkdir -p ' .. quoted(cache))) then
+         tmp = line_of('mktemp ' .. quoted(cache .. '/crush.XXXXXX'))
+      end
+   end
+   if tmp then
+      stderr:write('smush crush: building crush, once, in ', cache, '\n')
+      local built = compile_crush(source, tmp)
+      -- Rename it into place, so that a run that starts while another
+      -- finishes finds the whole program, or none of it.
+      if built and succeeded(execute(format('chmod 755 %s && mv -f %s %s',
+                                            quoted(tmp), quoted(tmp),
+                                            quoted(kept)))) then
+         return kept
+      end
+      execute('rm -f ' .. quoted(tmp))
+      if not built then
+         return nil
+      end
+   end
+   if compile_crush(source, dir .. '/crush') then
+      return dir .. '/crush'
+   end
+end
+
+
 -- Run the bootstrap script in *args* with crush, and write a barf of
 -- what it leaves in barfz.  The host files are next to the bin directory
 -- of *script*, the path of the running script.
@@ -408,13 +486,13 @@ local function crush_main(args, script)
 
    local bootstrap_path = choose(sub(bootstrap, 1, 1) == '/', bootstrap,
       function() return line_of 'pwd' .. '/' .. bootstrap end)
-   if not succeeded(execute(format(
-         '${CC:-cc} ${CFLAGS} ${CPPFLAGS} -D_XOPEN_SOURCE=700 -o %s %s',
-         quoted(dir .. '/crush'), quoted(source)))) then
+   local crush = crush_program(source, dir)
+   if not crush then
       stop 'cannot build crush'
    end
-   if not succeeded(execute(format('cd %s && mkdir barfz && ./crush %s >&2',
-                                   quoted(dir), quoted(bootstrap_path)))) then
+   if not succeeded(execute(format('cd %s && mkdir barfz && %s %s >&2',
+                                   quoted(dir), quoted(crush),
+                                   quoted(bootstrap_path)))) then
       stop('the bootstrap ' .. bootstrap .. ' failed')
    end
 
