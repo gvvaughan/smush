@@ -73,6 +73,14 @@ a barf, an archive that `host/barfx.c` unpacks with nothing but a C compiler
 to build it, under the paths that are given.  `--compress` compresses the barf with
 LZ4, and `--index` keeps the paths in an index, with the entries numbered.
 
+`smush crush [--keep] BOOTSTRAP > payload.barf` builds `host/crush.c` with
+`$CC`, makes a staging directory with an empty `barfz` in it, and runs the
+script BOOTSTRAP there with crush, which is how a standalone program is
+made.  What the script writes to its standard output goes to standard
+error.  Smush writes a compressed barf of the files that the script leaves
+below `barfz`, removes the staging directory, and exits with an error if the
+script fails.  `--keep` keeps the staging directory, and shows where it is.
+
 
 ## 3. Sources
 

@@ -17,13 +17,16 @@
 
 local Lexer = require 'smush.lexer'.prototype
 local barf = require 'smush.barf'
+local host = require 'smush.host'
 local minify = require 'smush.minify'
 local _context = require 'std.prototype.contextmanager'
 local _std = require 'std.functional.init'
 
 local _ENV = require 'std.normalize' {
+   'io.popen',
    'io.stderr',
    'io.write',
+   'os.execute',
    'os.exit',
    'package',
    'package.searchpath',
@@ -35,6 +38,7 @@ local _ENV = require 'std.normalize' {
    'table.concat',
    'table.sort',
    File = _context.File,
+   choose = _std.choose,
    slurp = _context.slurp,
    each = _std.each,
    keys = _std.keys,
@@ -242,6 +246,7 @@ local OPTIONS = {main = true, module = true, external = true}
 local USAGE = [[
 Usage: smush [OPTION]... SOURCE...
        smush barf [OPTION]... FILE...
+       smush crush [--keep] BOOTSTRAP
 
 Write a single file that bundles each SOURCE, to standard output.  A SOURCE
 is the path of a module, which is bundled under the name that its path makes,
@@ -263,6 +268,7 @@ have a copy of one file share the one.
   --bundled        list the rocks bundled in smush, and exit
 
 `smush barf --help` shows how to write a barf of files, and not a bundle.
+`smush crush --help` shows how to run a bootstrap script, and not write a bundle.
 ]]
 
 
@@ -275,6 +281,20 @@ given for it.
   --compress  compress the barf with LZ4
   --index     keep the paths in an index, and number the entries
   --help      show this help, and exit
+]]
+
+
+local CRUSH_USAGE = [[
+Usage: smush crush [OPTION]... BOOTSTRAP
+
+Build crush, make a staging directory with an empty directory barfz in it,
+and run the script BOOTSTRAP there with crush.  Write a compressed barf of
+the files that it leaves below barfz to standard output.  What the script
+writes to its standard output goes to standard error, and the staging
+directory is removed at the end.
+
+  --keep  keep the staging directory, and show where it is
+  --help  show this help, and exit
 ]]
 
 
@@ -309,6 +329,112 @@ local function barf_main(args)
 end
 
 
+-- *s* quoted for a shell.
+local function quoted(s)
+   return "'" .. gsub(s, "'", "'\\''") .. "'"
+end
+
+
+-- Whether what os.execute returned is success, in any Lua version.
+local function succeeded(ok)
+   return ok == true or ok == 0
+end
+
+
+-- The first line that the shell command *command* writes.
+local function line_of(command)
+   local pipe = popen(command)
+   local line = pipe:read '*l'
+   pipe:close()
+   return line
+end
+
+
+-- The relative paths of the files below the directory *dir*, sorted.
+local function files_below(dir)
+   local pipe = popen('cd ' .. quoted(dir) .. " && find . -type f | sort")
+   local paths = {}
+   for p in pipe:lines() do
+      paths[#paths + 1] = sub(p, 3)
+   end
+   pipe:close()
+   return paths
+end
+
+
+-- Run the bootstrap script in *args* with crush, and write a barf of
+-- what it leaves in barfz.  The host files are next to the bin directory
+-- of *script*, the path of the running script.
+local function crush_main(args, script)
+   local keep, bootstrap
+   each(args, function(a)
+      if a == '--keep' then
+         keep = true
+      elseif a == '--help' then
+         write(CRUSH_USAGE)
+         exit(0)
+      elseif sub(a, 1, 1) == '-' or bootstrap then
+         stderr:write("smush crush: unrecognized argument '", a, "'\n",
+            CRUSH_USAGE)
+         exit(1)
+      else
+         bootstrap = a
+      end
+   end)
+   if not bootstrap then
+      stderr:write('smush crush: give a BOOTSTRAP script\n', CRUSH_USAGE)
+      exit(1)
+   end
+   local source = host.path('crush.c', script)
+   if not source then
+      stderr:write('smush crush: no host/crush.c next to the bin directory of ',
+                   tostring(script), '\n')
+      exit(1)
+   end
+
+   local dir = line_of 'mktemp -d'
+   local function finish()
+      if keep then
+         stderr:write('smush crush: kept ', dir, '\n')
+      else
+         execute('rm -rf ' .. quoted(dir))
+      end
+   end
+   local function stop(message)
+      stderr:write('smush crush: ', message, '\n')
+      finish()
+      exit(1)
+   end
+
+   local bootstrap_path = choose(sub(bootstrap, 1, 1) == '/', bootstrap,
+      function() return line_of 'pwd' .. '/' .. bootstrap end)
+   if not succeeded(execute(format(
+         '${CC:-cc} ${CFLAGS} ${CPPFLAGS} -D_XOPEN_SOURCE=700 -o %s %s',
+         quoted(dir .. '/crush'), quoted(source)))) then
+      stop 'cannot build crush'
+   end
+   if not succeeded(execute(format('cd %s && mkdir barfz && ./crush %s >&2',
+                                   quoted(dir), quoted(bootstrap_path)))) then
+      stop('the bootstrap ' .. bootstrap .. ' failed')
+   end
+
+   local entries = {}
+   for i, p in ipairs(files_below(dir .. '/barfz')) do
+      local data, err = slurp(File(dir .. '/barfz/' .. p))
+      if data == nil then
+         stop(err)
+      end
+      entries[i] = {path = p, data = data}
+   end
+   local ok, bytes = pcall(barf.pack, entries, {compress = true})
+   if not ok then
+      stop(bytes)
+   end
+   finish()
+   write(bytes)
+end
+
+
 --- Write a single file that bundles *sources*.
 -- A source is a path, NAME=PATH, or the name of a module in the Lua path.
 -- With `--module=NAME` the file is a module that returns the bundled
@@ -321,6 +447,9 @@ end
 local function main(args)
    if args[1] == 'barf' then
       return barf_main({unpack(args, 2)})
+   end
+   if args[1] == 'crush' then
+      return crush_main({unpack(args, 2)}, args[0])
    end
    local script, entry, sources, known, externals = true, nil, {}, {}, {}
    local aliases = {}

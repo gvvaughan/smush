@@ -16,12 +16,19 @@ before: |
   end
 
   -- What `smush` writes for *args*, given the modules beneath *tmpdir*
-  -- to find, as a specl Process.
-  function smush(tmpdir, ...)
-     return capture(function(tmpdir, ...)
+  -- to find, when it runs as the script *script*, as a specl Process.
+  function smush_as(script, tmpdir, ...)
+     return capture(function(script, tmpdir, ...)
         package.path = tmpdir .. '/?.lua;' .. package.path
-        return require 'smush'.main {...}
-     end, tmpdir, ...)
+        local args = {...}
+        args[0] = script
+        return require 'smush'.main(args)
+     end, script, tmpdir, ...)
+  end
+
+  -- What `smush` writes for *args*, as it does when run from a clone.
+  function smush(tmpdir, ...)
+     return smush_as('./bin/smush', tmpdir, ...)
   end
 
 specify smush:
@@ -332,3 +339,53 @@ specify smush:
       local absolute = smush('.', 'barf', os.getenv 'PWD' .. '/bin/smush')
       expect(absolute.status).to_be(1)
       expect(absolute.errout).to_contain 'is absolute'
+
+- describe crush:
+  - it writes a compressed barf of the files that the bootstrap leaves in barfz: |
+      local dir = os.tmpname()
+      os.remove(dir)
+      assert(os.execute('mkdir ' .. dir))
+      spit(dir .. '/bootstrap', 'mkdir barfz/a\necho hello > barfz/a/x.txt\necho noise\n')
+      local got = smush('.', 'crush', dir .. '/bootstrap')
+      os.execute('rm -rf ' .. dir)
+      expect(got.status).to_be(0)
+      expect(got.output:sub(1, 9)).to_be '!<barfz>\n'
+      local listing, status = unpacked(got.output, 'cat a/x.txt')
+      expect(status).to_be(0)
+      expect(listing).to_be 'hello\n'
+
+  - it runs the bootstrap in the staging directory, which it keeps with --keep: |
+      local dir = os.tmpname()
+      os.remove(dir)
+      assert(os.execute('mkdir ' .. dir))
+      spit(dir .. '/bootstrap', 'echo here > barfz/where\npwd > barfz/cwd\n')
+      local got = smush('.', 'crush', '--keep', dir .. '/bootstrap')
+      os.execute('rm -rf ' .. dir)
+      expect(got.status).to_be(0)
+      local staging = got.errout:match 'kept (%S+)'
+      expect(staging).not_to_be(nil)
+      expect(io.open(staging .. '/crush')).not_to_be(nil)
+      expect(io.open(staging .. '/barfz/where')).not_to_be(nil)
+      os.execute('rm -rf ' .. staging)
+
+  - it fails, with nothing on standard output, if the bootstrap does: |
+      local dir = os.tmpname()
+      os.remove(dir)
+      assert(os.execute('mkdir ' .. dir))
+      spit(dir .. '/bootstrap', 'false\n')
+      local got = smush('.', 'crush', dir .. '/bootstrap')
+      os.execute('rm -rf ' .. dir)
+      expect(got.status).to_be(1)
+      expect(got.output).to_be ''
+      expect(got.errout).to_contain 'bootstrap'
+      expect(got.errout).to_contain 'failed'
+
+  - it fails, and shows where it looked, if the host files are not there: |
+      local got = smush_as('/nowhere/bin/smush', '.', 'crush', 'x')
+      expect(got.status).to_be(1)
+      expect(got.output).to_be ''
+      expect(got.errout).to_contain 'no host/crush.c next to the bin directory of /nowhere/bin/smush'
+
+  - it refuses a missing script and an unknown option:
+      expect(smush('.', 'crush').status).to_be(1)
+      expect(smush('.', 'crush', '--no-such', 'x').status).to_be(1)

@@ -3,4 +3,13 @@
  Smush the source, Luke!
  Copyright (C) 2019-2026 Gary V. Vaughan
 ]]
+
+-- Find the modules next to this script first, which are the ones of the
+-- release that the host files next to it belong to.
+local root = arg[0]:match '^(.-)/?bin/[^/]+$'
+if root then
+   local lib = (root ~= '' and root .. '/' or '') .. 'lib/'
+   package.path = lib .. '?.lua;' .. lib .. '?/init.lua;' .. package.path
+end
+
 os.exit(require 'smush'.main(arg))

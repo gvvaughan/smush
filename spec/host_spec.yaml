@@ -1,0 +1,30 @@
+# Smush the source, Luke!
+# Copyright (C) 2026 Gary V. Vaughan
+
+before:
+  host = require 'smush.host'
+
+specify smush.host:
+- describe path:
+  - it finds the host files next to the bin directory of the script: |
+      for _, name in ipairs {'crush.c', 'barfx.c'} do
+         expect(host.path(name, './bin/smush')).to_be('./host/' .. name)
+         expect(host.path(name, 'bin/smush')).to_be('host/' .. name)
+      end
+
+  - it finds the host files of a rock, next to the bin directory in it: |
+      local dir = os.tmpname()
+      os.remove(dir)
+      assert(os.execute('mkdir -p ' .. dir .. '/bin ' .. dir .. '/host'))
+      assert(io.open(dir .. '/host/crush.c', 'w')):close()
+      expect(host.path('crush.c', dir .. '/bin/smush')).
+         to_be(dir .. '/host/crush.c')
+      os.execute('rm -rf ' .. dir)
+
+  - it gives nil for a host file that is not next to the script: |
+      expect(host.path('no-such-file.c', './bin/smush')).to_be(nil)
+      expect(host.path('crush.c', '/nowhere/bin/smush')).to_be(nil)
+
+  - it gives nil without a script in a bin directory, and finds nothing else: |
+      expect(host.path 'crush.c').to_be(nil)
+      expect(host.path('crush.c', 'smush')).to_be(nil)

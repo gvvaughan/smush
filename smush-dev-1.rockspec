@@ -41,6 +41,10 @@ build = {
    -- from, which builtin would find in a release for itself.
    modules = {},
 
+   -- The host files that a standalone program is built from are in the
+   -- directory of the rock, next to the script that is installed.
+   copy_directories = {'doc', 'host'},
+
    install = {
       bin = {smush = 'build-aux/smush'},
    },
@@ -52,6 +56,7 @@ if _MODREV == 'dev' then
       'lib/smush/barf.lua',
       'lib/smush/c.lua',
       'lib/smush/clexer.lua',
+      'lib/smush/host.lua',
       'lib/smush/init.lua',
       'lib/smush/lexer.lua',
       'lib/smush/lz4.lua',
