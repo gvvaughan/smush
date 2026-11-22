@@ -73,11 +73,26 @@ specify crush:
     expect(text).to_contain '3e23e8160039594a33894f6564e1b1348bbd7a0088d42c4acb73eeaed59c009d  y'
     expect(select(2, crushed 'sha256')).to_be(1)
 
+- it runs the command after || only if the one before it fails: |
+    expect(out [[printf a || printf b]]).to_be 'a'
+    expect(out [[false || printf b]]).to_be 'b'
+    expect(out [[false||printf x]]).to_be 'x'
+    expect(out [[false || false || printf c]]).to_be 'c'
+    expect(out [[printf a || printf b || printf c]]).to_be 'a'
+    expect(out [[false > f || printf z > g; cat g]]).to_be 'z'
+
+- it goes on after a chain with || that works, and ends after one that does not: |
+    expect(out "false || true; printf next").to_be 'next'
+    local text, status = crushed "sh -c 'exit 3' || sh -c 'exit 4'; printf no"
+    expect(text).to_be ''
+    expect(status).to_be(4)
+
 - it ends with the status of the command that fails: |
     expect(select(2, crushed [[sh -c 'exit 7'; printf no]])).to_be(7)
 
 - it refuses a script that it cannot run before it runs any of it: |
-    for _, bad in ipairs {'a | b', 'if x', 'x=$(y)', "echo 'x"} do
+    for _, bad in ipairs {'a | b', 'if x', 'x=$(y)', "echo 'x",
+       'a ||', '|| a', 'a ||\nb', 'x=1 || a', 'a || x=1', 'x=[a || b]'} do
        local out, status = crushed('printf no\n' .. bad)
        expect(status).to_be(3)
        expect(out).to_match '^%./script: 2:%d+: '

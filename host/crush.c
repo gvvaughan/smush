@@ -10,7 +10,8 @@
  *
  * Syntax:
  *
- *     script    = command { ( NEWLINE | ';' ) command }
+ *     script    = chain { ( NEWLINE | ';' ) chain }
+ *     chain     = command { '||' command }
  *     command   = { assign } [ word { word } ] { redirect }
  *     assign    = NAME '=' [ word | '[' { word } ']' ]
  *     redirect  = [ DIGIT ] ( '>' | '>>' ) word
@@ -35,7 +36,10 @@
  *                       expanded, and then run COMMAND
  *
  * Any other command is a program found in $PATH.  A command that exits
- * with a status other than 0 ends the script with that status.  Crush
+ * with a status other than 0 ends the script with that status, unless
+ * `||` follows it: `a || b` runs b only if a fails, and a chain ends the
+ * script only if its last command fails, with the status of that one.
+ * Each side of `||` has a command with at least a word.  Crush
  * itself exits with 3 when the script is wrong, with 2 when the command
  * line is, and with 1 when it fails on its own, for example to read the
  * script.
@@ -61,7 +65,7 @@
  *  - Inside `'...'` nothing is special.  Inside `"..."` only `$name`
  *    is, and a backslash escapes `"`, `$`, `\` and a newline.  Outside
  *    quotes a backslash makes the next character literal.
- *  - There are no pipes, `&`, `<`, `( )`, backticks, `$(...)`,
+ *  - There are no pipes (a lone `|`), `&`, `<`, `( )`, backticks, `$(...)`,
  *    `${...}`, `$$`, `$?`, `$#name`, `{ }` as words, or keywords such
  *    as `if`, `for` and `while`.  Crush rejects a script that has one,
  *    with its line and column, before any of it runs.  Use
@@ -117,6 +121,7 @@ typedef struct {
     word *word;
     redirect *redirect;
     size_t nassign, nword, nredirect;
+    int or_next;  /* the next command runs only if this one fails */
     const char *at;  /* where it starts, for error messages */
 } command;
 
@@ -266,7 +271,7 @@ add_variable(word *w, const char *tz, int quoted)
 
 
 /* Parse the word that starts at TZ into W, and return where it ends:
-   at a blank, a newline, a `;`, a `>`, or a `]` when INLIST. */
+   at a blank, a newline, a `;`, a `>`, a `||`, or a `]` when INLIST. */
 static const char *
 parse_word(word *w, const char *tz, int inlist)
 {
@@ -279,6 +284,7 @@ parse_word(word *w, const char *tz, int inlist)
 #define FLUSH() \
     do { if (n) add_part(w, xmemdupz(s, n), 0, 0); n = 0; } while (0)
     for (; *tz && !blank((unsigned char) *tz) && !strchr("\n;>", *tz)
+         && !(tz[0] == '|' && tz[1] == '|')
          && !(inlist && *tz == ']'); ) {
         if (*tz == '\'') {
             const char *close = strchr(tz + 1, '\'');
@@ -381,7 +387,8 @@ parse_value(assign *a, const char *tz)
             }
             tz = parse_word(grow(&a->value, &a->n, sizeof *a->value), tz,
                            1);
-            if (*tz == '>' || *tz == ';')
+            if (*tz == '>' || *tz == ';'
+                || (tz[0] == '|' && tz[1] == '|'))
                 exit(parseerror(tz, "a list has words and no more"));
         }
         return tz + 1;
@@ -408,6 +415,16 @@ parse(const char *tz, command **c, size_t *n)
             tz++;
             continue;
         }
+        if (tz[0] == '|' && tz[1] == '|') {
+            if (!cmd || !cmd->nword)
+                exit(parseerror(tz, "|| needs a command before it"));
+            cmd->or_next = 1;
+            cmd = NULL;
+            tz = skip_blanks(tz + 2);
+            if (!*tz || *tz == '\n' || *tz == ';')
+                exit(parseerror(tz, "|| needs a command after it"));
+            continue;
+        }
         if (!cmd) {
             cmd = grow(c, n, sizeof **c);
             cmd->at = tz;
@@ -420,7 +437,8 @@ parse(const char *tz, command **c, size_t *n)
             r->fd = digits == tz ? 1 : atoi(tz);
             r->append = digits[1] == '>';
             tz = skip_blanks(digits + 1 + r->append);
-            if (!*tz || strchr("\n;>", *tz))
+            if (!*tz || strchr("\n;>", *tz)
+                || (tz[0] == '|' && tz[1] == '|'))
                 exit(parseerror(tz,
                                 "a redirection has the name of a file"));
             tz = parse_word(&r->target, tz, 0);
@@ -959,6 +977,9 @@ main(int argc, char **argv)
                         "a NUL is not in a script"));
 
     parse(text, &c, &n);
+    for (i = 0; i + 1 < n; i++)
+        if (c[i].or_next && !c[i + 1].nword)
+            exit(parseerror(c[i + 1].at, "|| needs a command after it"));
     for (i = 0; i < n; i++) {
         if (!c[i].nword) {
             for (j = 0; j < c[i].nassign; j++)
@@ -967,8 +988,13 @@ main(int argc, char **argv)
                                c[i].at));
             continue;
         }
-        if ((status = run(&c[i])) != 0)
+        status = run(&c[i]);
+        while (status && c[i].or_next)
+            status = run(&c[++i]);
+        if (status)
             return status;
+        while (c[i].or_next)  /* the rest of a chain that worked */
+            i++;
     }
     return 0;
 }
