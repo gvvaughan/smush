@@ -7,7 +7,7 @@ before:
   entries = {
      {path = 'main.lua', data = 'print "hi"\n'},
      {path = 'deps/lua/src/lua.h', data = 'int x;\n'},
-     {path = 'build', data = '#!/bin/sh\necho build\n', mode = tonumber('755', 8)},
+     {path = 'build', data = '#!/bin/sh\necho build\n'},
      {path = 'a b/c d.txt', data = ''},
      {path = 'bin', data = '\0\1\2\255\n\n'},
   }
@@ -24,11 +24,8 @@ specify smush.barf:
       expect(bytes:sub(-16, -2)).to_match '^%d%d%d%d%d%d%d%d%d%d%d%d%d%d%d$'
 
   - it writes a header line for each entry:
-      expect(barf.pack {{path = 'x/y', data = 'abc', mode = tonumber('755', 8)}}).
-         to_be('!<barf>\n3 755 x/y\nabc\n' .. '000000000000022\n')
-
-  - it makes a mode of 644 when there is none:
-      expect(barf.pack {{path = 'x', data = ''}}).to_contain '0 644 x\n'
+      expect(barf.pack {{path = 'x/y', data = 'abc'}}).
+         to_be('!<barf>\n3 x/y\nabc\n' .. '000000000000018\n')
 
   - it makes the same bytes every time:
       expect(barf.pack(entries)).to_be(barf.pack(entries))
@@ -36,13 +33,12 @@ specify smush.barf:
   - it makes a barf with no entries:
       expect(barf.pack {}).to_be('!<barf>\n' .. '000000000000008\n')
 
-  - it keeps the path, data and mode of each entry: |
+  - it keeps the path and data of each entry: |
       local got = assert(unbarf(barf.pack(entries)))
       expect(#got).to_be(#entries)
       for i, entry in ipairs(entries) do
          expect(got[i].path).to_be(entry.path)
          expect(got[i].data).to_be(entry.data)
-         expect(got[i].mode).to_be(entry.mode or tonumber('644', 8))
       end
 
   - it refuses a path that is not allowed:
@@ -70,21 +66,20 @@ specify smush.barf:
   - it names the entries by number, and has their paths in the index: |
       local bytes = barf.pack(entries, {index = true})
       expect(bytes:sub(1, 8)).to_be '!<barx>\n'
-      expect(bytes).to_contain '\n11 644 1\nprint "hi"\n\n7 644 2\n'
+      expect(bytes).to_contain '\n11 1\nprint "hi"\n\n7 2\n'
       expect(bytes).not_to_contain ' main.lua\n'
 
-  - it gives the paths back from the index, and the data and the mode: |
+  - it gives the paths back from the index, and the data: |
       local list = assert(unbarf(barf.pack(entries, {index = true})))
       expect(#list).to_be(#entries)
       for i, entry in ipairs(entries) do
          expect(list[i].path).to_be(entry.path)
          expect(list[i].data).to_be(entry.data)
-         expect(list[i].mode).to_be(entry.mode or tonumber('644', 8))
       end
 
   - it gives the offset of the data from the end of the index: |
       local bytes = barf.pack(entries, {index = true})
-      local _, header = bytes:find('^!<barx>\n%d+ %d+ index\n')
+      local _, header = bytes:find('^!<barx>\n%d+ index\n')
       local size = tonumber(bytes:match '^!<barx>\n(%d+) ')
       local base = header + size + 1
       local rows = load(bytes:sub(header + 1, header + size), '=index',

@@ -44,7 +44,7 @@ end
 
 
 -- The entries of the barf at the end of *bytes*, a list of `{path=,
--- data=, mode=}` in order, with the paths from the index if there is
+-- data=}` in order, with the paths from the index if there is
 -- one; or nil and why not.  This trusts what `pack` writes, and does
 -- not check it.
 function unbarf(bytes)
@@ -61,12 +61,11 @@ function unbarf(bytes)
    local entries = {}
    pos = pos + #magic + 1
    while pos <= last do
-      local size, mode, path, data = bytes:match(
-         '^(%d+) (%d+) ([^\n]+)\n()', pos)
+      local size, path, data = bytes:match(
+         '^(%d+) ([^\n]+)\n()', pos)
       entries[#entries + 1] = {
          path = path,
          data = bytes:sub(data, data + size - 1),
-         mode = tonumber(mode, 8),
       }
       pos = data + size + 1
    end

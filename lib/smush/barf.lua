@@ -10,37 +10,37 @@
  shell script or a program, and is found from its end:
 
     !<barf>
-    6 644 hello.txt
+    6 hello.txt
     Hello!
-    17 755 bin/run
+    17 bin/run
     #!/bin/sh
     echo hi
-    000000000000064
+    000000000000056
 
- The magic line is followed by each entry, a header of `SIZE MODE PATH`
+ The magic line is followed by each entry, a header of `SIZE PATH`
  and then SIZE bytes of data and a newline.  The last line is the
  length of everything from the magic line to there, in 15 digits.
 
  A barf can be indexed, with `!<barx>` as its magic line.  Its first
- entry is `index`, a Lua list of `{path, offset, size, mode}`, where
+ entry is `index`, a Lua list of `{path, offset, size}`, where
  offset is that of the data from the end of the index, and each of the
  other entries is named by its number.  The index is the only place that
  has the paths, and the data of any entry is found without a walk
  through the headers before it.  For the entries above it is:
 
     !<barx>
-    63 644 index
+    53 index
     return {
-    {"hello.txt", 8, 6, 420},
-    {"bin/run", 24, 17, 493},
+    {"hello.txt", 4, 6},
+    {"bin/run", 16, 17},
     }
 
-    6 644 1
+    6 1
     Hello!
-    17 755 2
+    17 2
     #!/bin/sh
     echo hi
-    000000000000127
+    000000000000105
 
  This module only writes a barf.
 
@@ -67,7 +67,6 @@ local _ENV = require 'std.normalize' {
 
 
 local MAGIC = '!<barf>\n'
-local DEFAULT_MODE = tonumber('644', 8)
 local INDEXED = '!<barx>\n'
 local INDEX = 'index'
 
@@ -117,8 +116,7 @@ end
 
 -- The header line of *entry*, named *name*, or by its path.
 local function header_of(entry, name)
-   return format('%d %o %s\n', #entry.data, entry.mode or DEFAULT_MODE,
-                 name or entry.path)
+   return format('%d %s\n', #entry.data, name or entry.path)
 end
 
 
@@ -144,14 +142,14 @@ local function indexed(state, i, entry)
    local header = header_of(entry, tostring(i))
    local at = state.pos + #header
    local rows = state.rows
-   rows[#rows + 1] = format('{%q, %d, %d, %d},\n', entry.path, at,
-                            #entry.data, entry.mode or DEFAULT_MODE)
+   rows[#rows + 1] = format('{%q, %d, %d},\n', entry.path, at,
+                            #entry.data)
    return {pos = at + #entry.data + 1, rows = rows}
 end
 
 
 -- The text of the index of *entries*: a Lua list of rows `{path,
--- offset, size, mode}`, in the order of the barf.  Each offset is that
+-- offset, size}`, in the order of the barf.  Each offset is that
 -- of the data of the entry, from the end of the entry of the index.
 local function index_text(entries)
    local state = foldl(iter(ipairs(entries)),
@@ -167,9 +165,7 @@ end
 
 
 --- Make the bytes of a barf.
--- @tparam table entries a list of `{path=, data=, mode=}`, in order;
---    `mode` is a number (`tonumber('755', 8)`) and is 420 (octal 644)
---    if left out
+-- @tparam table entries a list of `{path=, data=}`, in order
 -- @tparam[opt] table opts `index`, true to number the entries and keep
 --    their paths in an index
 -- @treturn string the barf, with its trailer
