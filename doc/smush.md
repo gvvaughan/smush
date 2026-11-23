@@ -317,6 +317,18 @@ it:
   * removes whatever it fetched or made that is not in `barfz`.  The script is
     the only one that knows what it left, so it cleans up after itself.
 
+The bootstrap and build scripts of smush itself, `standalone/bootstrap` and
+`standalone/build`, are an example.  The bootstrap runs in the root of the
+source, and takes the version of smush from the `lib/smush/version.lua` that
+building smush makes, so build smush first.  It fetches Lua 5.1.5, and the
+std modules that smush needs, into a work directory in `$TMPDIR`, which it
+removes when it is done.  It moves the Lua sources into `barfz/`, and copies
+`host/main.c` and `standalone/build` there.  It packs the Lua files of smush
+and of the modules with `smush barf --index -C`, which gives them the paths
+that `require` looks for them by, and makes that into the C of `barfz/data.c`
+with `embed`.  The build script is one command, that compiles all of those
+with `$CC`.
+
 
 Report bugs at the [issue tracker][issues].
 

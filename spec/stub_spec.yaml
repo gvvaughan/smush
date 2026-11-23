@@ -32,7 +32,7 @@ before: |
   function stubbed(build)
      local dir = io.popen('mktemp -d'):read '*l'
      local text = slurp('host/stub.sh.in'):gsub('@(%u[%u_]*)@', {
-        NAME = 'hello', VERSION = '1.0', ID = '42',
+        NAME = 'hello', ID = '42',
         BARFX_C = slurp('host/barfx.c'),
      })
      local file = io.open(dir .. '/hello', 'wb')

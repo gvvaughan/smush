@@ -1,24 +1,10 @@
 #!/bin/sh
-# @NAME@ @VERSION@: a program in one file that builds itself.
-#
-# The first run builds a program for this machine with $CC and keeps it
-# in ${XDG_CACHE_HOME:-$HOME/.cache}/@NAME@/@ID@-SYSTEM-MACHINE, and
-# every later run starts the kept program.  The sources for the build
-# are in a compressed barf at the end of this file.  To unpack it, the
-# first run compiles barfx from the C below (smush's host/barfx.c),
-# and then it compiles crush, which runs the build script.
-#
-# The barf has these files, as the author of the program put them there:
-#   crush.c   the source of crush, which runs `build`
-#   build     a crush script that makes the program as the file $OUT.  It
-#             runs in the directory where the barf is unpacked, with CC,
-#             CFLAGS (-O2 if unset), LDFLAGS, LIBS and OUT in its
-#             environment
-#   the rest  whatever `build` needs, for the program to be made from
+# @NAME@: a program in one file that builds itself on its first run.  See Standalone Programs in doc/smush.md.
 
 # What the environment does not set.
 : ${CC:="cc"}
 : ${CFLAGS:="-O2"}
+: ${LIBS=-lm}
 : ${TMPDIR:="/tmp"}
 : ${HOME:="/tmp"}
 : ${XDG_CACHE_HOME:="$HOME/.cache"}
