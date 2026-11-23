@@ -49,8 +49,7 @@ run cp standalone/build barfz/build
 
 
 # The runtime: the Lua of smush and of the std modules it needs, under the
-# paths that `require` looks for them by, and the host files that smush
-# builds crush from.
+# paths that `require` looks for them by, and the host files that it reads.
 smush_lua=[barf c clexer host init lexer lz4 minify version]
 prototype_lua=[_base container contextmanager object scanner set]
 
@@ -60,7 +59,7 @@ run smush barf --index \
     -C $work/normalize/lib std/normalize/_core.lua std/normalize/init.lua \
     -C $work/functional/lib std/functional/_base.lua std/functional/init.lua \
     -C $work/prototype/lib std/prototype/$prototype_lua.lua \
-    -C . host/crush.c host/barfx.c \
+    -C . host/crush.c host/barfx.c host/stub.sh.in \
     -C $work main.lua > $work/runtime.barf
 
 # `embed NAME FILE` writes C that defines NAME_data and NAME_size, which

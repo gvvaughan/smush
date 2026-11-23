@@ -433,6 +433,10 @@ A program with C modules compiles `main.c` with `-DHOST_MODULES`, and links a
 file that defines `host_modules`, a list of `luaL_Reg` ended by `{NULL, NULL}`.
 `require` finds those by name before the barf.
 
+The module `payload` is always there, and `payload.read(path)` gives the bytes
+of the file `path` of the barf, or nil.  It is for a program that has files
+that are not Lua, such as the sources of the program that it builds.
+
 
 ### 4.6. Smush as a Standalone Program
 
@@ -440,6 +444,12 @@ file that defines `host_modules`, a list of `luaL_Reg` ended by `{NULL, NULL}`.
 `standalone/build`, so that there is a smush where there is no Lua, and no
 LuaRocks.  Its runtime is `lib/smush/*.lua`, the std modules, and the host
 files `crush.c`, `barfx.c` and `stub.sh.in`.
+A standalone smush reads those three from its own payload, with `payload.read`,
+and not from a `host` directory next to a `bin` directory, which a standalone
+smush does not have.  So `smush crush` and `smush standalone` work in a
+program that is not in a clone or a rock, and a standalone smush makes other
+standalone programs.  It reads them only there, so what it makes is of the
+release that it is, and never of one that is on the machine.
 
 
 Report bugs at the [issue tracker][issues].

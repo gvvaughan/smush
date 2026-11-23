@@ -22,7 +22,9 @@
 
   - `smush standalone NAME PAYLOAD` writes a standalone program called
     NAME: a script that builds itself on its first run, from the barf that
-    `smush crush --first-run` writes, and keeps what it builds in the cache.
+    `smush crush --first-run` writes, and keeps what it builds in the
+    cache.  A standalone smush finds the host files it needs in its own
+    payload, so that `smush crush` and `smush standalone` work in it.
 
 
 ## Noteworthy changes in release 0.4 (2026-10-29) [stable]

@@ -534,8 +534,8 @@ local function crush_main(args, script)
       stderr:write('smush crush: give a SCRIPT\n', CRUSH_USAGE)
       exit(1)
    end
-   local source = host.path('crush.c', script)
-   if not source then
+   local crush_c = host.read('crush.c', script)
+   if not crush_c then
       stderr:write('smush crush: no host/crush.c next to the bin directory of ',
                    tostring(script), '\n')
       exit(1)
@@ -555,6 +555,11 @@ local function crush_main(args, script)
       exit(1)
    end
 
+   local source = dir .. '/crush.c'
+   local handle = open(source, 'wb')
+   if not handle or not handle:write(crush_c) or not handle:close() then
+      stop('cannot write ' .. source)
+   end
    local crush = crush_program(source, dir)
    if not crush then
       stop 'cannot build crush'
@@ -625,16 +630,11 @@ local function standalone_main(args, script)
 
    local texts = {}
    for _, file in ipairs {'stub.sh.in', 'barfx.c'} do
-      local path = host.path(file, script)
-      if not path then
+      texts[file] = host.read(file, script)
+      if not texts[file] then
          stop('no host/' .. file .. ' next to the bin directory of ' ..
               tostring(script))
       end
-      local text, err = slurp(File(path))
-      if text == nil then
-         stop(err)
-      end
-      texts[file] = text
    end
    local bytes, err = slurp(File(payload))
    if bytes == nil then

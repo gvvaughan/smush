@@ -28,3 +28,26 @@ specify smush.host:
   - it gives nil without a script in a bin directory, and finds nothing else: |
       expect(host.path 'crush.c').to_be(nil)
       expect(host.path('crush.c', 'smush')).to_be(nil)
+
+- describe read:
+  - it reads the host files next to the bin directory of the script: |
+      local file = assert(io.open 'host/barfx.c', 'rb')
+      local text = file:read '*a'
+      file:close()
+      expect(host.read('barfx.c', './bin/smush')).to_be(text)
+
+  - it gives nil for a host file that is not there: |
+      expect(host.read('crush.c', '/nowhere/bin/smush')).to_be(nil)
+
+  - it reads the payload of a standalone program, and only that: |
+      local fresh = loadfile(package.searchpath('smush.host', package.path))()
+      local reads = {}
+      fresh.payload = function()
+         return {read = function(path)
+            reads[#reads + 1] = path
+            return path == 'host/crush.c' and 'in the payload' or nil
+         end}
+      end
+      expect(fresh.read('crush.c', './bin/smush')).to_be 'in the payload'
+      expect(fresh.read('barfx.c', './bin/smush')).to_be(nil)
+      expect(reads).to_equal {'host/crush.c', 'host/barfx.c'}

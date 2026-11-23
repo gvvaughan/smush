@@ -22,7 +22,8 @@
  * `require` finds a module in host_modules, or else in the barf: the
  * Lua path and the C path are not used, so a module that is not in
  * the program is an error, and is never one that happens to be on the
- * machine.
+ * machine.  The module `payload` is always there, and payload.read(path)
+ * is the bytes of the file `path` of the barf, or nil if there is none.
  *
  * It builds with Lua 5.1 to 5.5 and LuaJIT, whichever the build links
  * with, and runs the Lua of the program in that.
@@ -151,32 +152,76 @@ read_index(lua_State *L)
 }
 
 
-/* Load the file PATH of the payload, with MAP, the table from the path
-   of each to its row, at that index of the stack.  Push the function
-   and return 0; or if there is no such file, push nothing and return
-   1; or if it does not compile, push why and return -1. */
+/* Find the file PATH of the payload, with MAP, the table from the path
+   of each to its row, at that index of the stack.  Set DATA and SIZE and
+   return 1, or if there is no such file return 0. */
 static int
-load_payload(lua_State *L, int map, const char *path)
+find_payload(lua_State *L, int map, const char *path,
+             const char **data, size_t *size)
 {
-    lua_Integer offset, size;
-    int status;
+    lua_Integer offset, length;
 
     lua_getfield(L, map, path);
     if (lua_isnil(L, -1)) {
         lua_pop(L, 1);
-        return 1;
+        return 0;
     }
     lua_rawgeti(L, -1, 2);
     lua_rawgeti(L, -2, 3);
     offset = lua_tointeger(L, -2);
-    size = lua_tointeger(L, -1);
+    length = lua_tointeger(L, -1);
     lua_pop(L, 3);
+    *data = (const char *) payload + offset;
+    *size = (size_t) length;
+    return 1;
+}
 
+
+/* Load the file PATH of the payload, with MAP at that index of the
+   stack.  Push the function and return 0; or if there is no such file,
+   push nothing and return 1; or if it does not compile, push why and
+   return -1. */
+static int
+load_payload(lua_State *L, int map, const char *path)
+{
+    const char *data;
+    size_t size;
+    int status;
+
+    if (!find_payload(L, map, path, &data, &size))
+        return 1;
     lua_pushfstring(L, "@%s", path);
-    status = luaL_loadbuffer(L, (const char *) payload + offset,
-                             (size_t) size, lua_tostring(L, -1));
+    status = luaL_loadbuffer(L, data, size, lua_tostring(L, -1));
     lua_remove(L, -2);
     return status == LUA_OK ? 0 : -1;
+}
+
+
+/* payload.read(path): the bytes of the file PATH of the payload, or nil
+   if there is no such file.  The map is the upvalue. */
+static int
+payload_read(lua_State *L)
+{
+    const char *data;
+    size_t size;
+
+    if (!find_payload(L, lua_upvalueindex(1), luaL_checkstring(L, 1),
+                      &data, &size))
+        return 0;
+    lua_pushlstring(L, data, size);
+    return 1;
+}
+
+
+/* The loader of the module `payload`, with the map as its upvalue. */
+static int
+open_payload(lua_State *L)
+{
+    lua_newtable(L);
+    lua_pushvalue(L, lua_upvalueindex(1));
+    lua_pushcclosure(L, payload_read, 1);
+    lua_setfield(L, -2, "read");
+    return 1;
 }
 
 
@@ -220,18 +265,21 @@ install(lua_State *L, int map)
 
     lua_getglobal(L, "package");
     package = lua_gettop(L);
+    lua_getfield(L, package, "preload");
+    lua_pushvalue(L, map);
+    lua_pushcclosure(L, open_payload, 1);
+    lua_setfield(L, -2, "payload");
 #ifdef HOST_MODULES
     {
         const luaL_Reg *m;
 
-        lua_getfield(L, package, "preload");
         for (m = host_modules; m->name; m++) {
             lua_pushcfunction(L, m->func);
             lua_setfield(L, -2, m->name);
         }
-        lua_pop(L, 1);
     }
 #endif
+    lua_pop(L, 1);
 
     /* The searchers (the loaders, in Lua 5.1) are the preload table, and
        then this. */
