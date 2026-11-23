@@ -94,6 +94,7 @@
  *    two words and CFLAGS is a word for each flag.  An unset name is an
  *    empty list.  In double quotes the value is not split but kept as
  *    it is, so write `"$OUT/host"` for a path that may have a blank.
+ *  - TMPDIR is `/tmp` if the environment has none, or an empty one.
  *  - A variable that the script sets is not exported: write
  *    `name=value command` to give one command a variable.
  *  - Inside `'...'` nothing is special.  Inside `"..."` only `$name`
@@ -1422,6 +1423,9 @@ main(int argc, char **argv)
     if (argc != 2)
         argfatal("usage: crush FILE");
     script_name = argv[1];
+    /* A script can rely on TMPDIR. */
+    if (!getenv("TMPDIR") || !*getenv("TMPDIR"))
+        setenv("TMPDIR", "/tmp", 1);
     if (!(f = fopen(argv[1], "rb")) || fseek(f, 0, SEEK_END)
         || (size = ftell(f)) < 0 || fseek(f, 0, SEEK_SET))
         sysfatal(argv[1]);

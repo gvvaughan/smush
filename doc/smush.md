@@ -271,6 +271,8 @@ and exits with the status of crush.  Crush is built from `host/crush.c` with
 `$CC` the first time, and the program is kept in `$XDG_CACHE_HOME/smush`, or
 `~/.cache/smush`, named for the text of `crush.c` and for the system, so that
 no run builds it again, or runs a different `crush` that is on the path.
+A script can rely on `$TMPDIR`, which is `/tmp` if the caller has none, for
+the files that it makes and removes.
 
 
 ### 4.2. Making a Payload

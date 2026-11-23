@@ -43,6 +43,11 @@ specify crush:
        to_be 'a b  c d\n\n-n x \\n\n'
     expect(out [[x=[1 2]; echo $x > f; echo 3 >> f; cat f]]).to_be '1 2\n3\n'
 
+- it gives a script a TMPDIR, /tmp if the environment has none or an empty one: |
+    expect(out([[printf '%s' "$TMPDIR"]], 'env -u TMPDIR ')).to_be '/tmp'
+    expect(out([[printf '%s' "$TMPDIR"]], 'TMPDIR= ')).to_be '/tmp'
+    expect(out([[printf '%s' "$TMPDIR"]], 'TMPDIR=/var/tmp ')).to_be '/var/tmp'
+
 - it shows a command that run runs, with its words quoted: |
     expect(out [[x=[a 'b c']; run printf '<%s>' $x '']]).
        to_be "% printf '<%s>' a 'b c' ''\n<a><b c><>"
