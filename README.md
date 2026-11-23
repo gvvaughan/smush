@@ -4,9 +4,16 @@
 [![workflow status](https://github.com/gvvaughan/smush/actions/workflows/spec.yml/badge.svg?branch=master)](https://github.com/gvvaughan/smush/actions)
 [![codecov.io](https://codecov.io/gh/gvvaughan/smush/graph/badge.svg?branch=master)](https://codecov.io/gh/gvvaughan/smush?branch=master)
 
-[Smush][] bundles Lua modules into a single file, with their comments
-and white space squeezed out, to run as a program or to load as a
-module, for [LuaJIT][] and [Lua][] 5.1, 5.2, 5.3, 5.4 and 5.5.
+[Smush][] ships Lua code as one file, in either of two ways, for
+[LuaJIT][] and [Lua][] 5.1, 5.2, 5.3, 5.4 and 5.5:
+
+ * a **bundle** squeezes Lua modules into one Lua file, with their
+   comments and white space taken out, to run as a program or to load as a
+   module.  It runs wherever there is a Lua.
+ * a **standalone program** is one file that carries its own Lua, and the
+   C and Lua libraries it uses.  It builds itself the first time that it
+   runs, on a machine that has a shell and a C compiler, and needs no Lua,
+   no LuaRocks and no network.
 
 Smush is released under the [MIT license][mit] (the same license as Lua
 itself).  There is no warranty.
@@ -14,68 +21,32 @@ itself).  There is no warranty.
 
 ## Usage
 
+To bundle Lua modules:
+
     smush --main=NAME SOURCE... > program
     smush --module=NAME SOURCE... > module.lua
 
 Each SOURCE is the path of a Lua module, which is bundled as the name
 that its path makes (`lib/foo/init.lua` is `foo`), `NAME=PATH`, which is
-bundled as NAME, or the name of a module that is in the Lua path.
+bundled as NAME, the name of a module that is in the Lua path, or
+`ALIAS::MODULE`, which shares one bundled copy of a file that libraries
+each keep a copy of.  A bundle runs in an environment of its own, so it
+never sees, or is seen by, another copy of a library that the host has.
+A module that has a C part is `--external`, and comes from the host.
 
-`ALIAS::MODULE` makes the module ALIAS the bundled module MODULE, in place
-of a source of its own.  Libraries that each keep a copy of one file, such
-as `typecheck._normalize` and `optparse._normalize`, which are copies of
-`std.normalize._core`, can then share the one that is bundled, with
-`typecheck._normalize::std.normalize._core`, and the bundle has one
-instance of it, and no copy to differ from it.
+To make a standalone program, from a bootstrap script that gathers its
+sources and a build script that compiles them, which are written in the
+small build language that `smush crush` runs:
 
-An option that takes a value is written `--NAME=VALUE` or `--NAME VALUE`.
+    smush crush --first-run bootstrap > payload.barf
+    smush standalone NAME payload.barf > FILE
+    chmod +x FILE
 
-  * `--main=NAME` writes a script that exits with the result of calling
-    the `main` function of the bundled module NAME with its arguments.
-  * `--module=NAME` writes a module that returns the bundled module NAME.
-  * `--external=NAME` says that the host provides the module NAME to the
-    bundle, which is how a bundle reaches a module that cannot be
-    bundled, such as one written in C.  The bundle asks the host for it,
-    with the host's own `require`, the first time that it needs it, so
-    the host need not have loaded it already.
+The same commands make a standalone smush, from `standalone/bootstrap`.
 
-Smush warns of a module in the Lua path that a bundled module names but
-that is not bundled, unless it is external or is only asked for with
-`pcall(require, 'name')`.
-
-
-## The environment of a bundle
-
-The modules of a bundle run in their own environment, with copies of the
-globals, and a custom `require` and `package.loaded`, so:
-
-  * a bundled module never finds a module of the same name that the host
-    has loaded, nor does it see the host's `package.loaded`, except for the
-    modules that are `--external`; its `package.loaded` has the standard
-    libraries that every supported Lua has (`coroutine`, `debug`, `io`,
-    `math`, `os`, `string` and `table`), and its own `_G` and `package`, so
-    `require 'string'` works in a bundle, as it does anywhere.  A library
-    that only some Luas have, such as `utf8` or `ffi`, needs `--external`;
-  * nothing a bundled module loads is left in the host's `package.loaded`;
-  * a bundled copy of a library is hermetically separated from any other
-    copy of it that the host has installed.  This lets a program such as
-    a test runner use its bundled libraries even while it tests a different
-    version of the same libraries it is calling internally.
-
-Every bundle has a module `smush.bundled`, with a function `showbundled`
-that writes `smush VERSION bundled:`, the version of the smush that bundled
-it, and then each rock that the modules in it are from, as LuaRocks has them
-installed, one to a line, with its version.  A program calls it from its own
-`--bundled` option, so that the help and the man page of the program have
-the option, and says that it is not bundled if it cannot `require` the module:
-
-    local ok, bundled = pcall(require, 'smush.bundled')
-    if ok then bundled.showbundled() else print 'not a bundled program!' end
-
-A module that no rock has, such as a file of the project, is not listed.
-
-A module that has a C part can be partially bundled for only its Lua part,
-with `--external` for the C part.
+The [manual][] has the rest, including the [bundle][bundles] options, the
+[build language][crush], and [how a standalone program
+works][standalone].
 
 
 ## Installation
@@ -90,7 +61,7 @@ to run it.  LuaRocks builds it with [Luke][], from the rockspec.
 
 ## Documentation
 
-Luke includes [comprehensive documentation][github.io], which is
+Smush includes [comprehensive documentation][github.io], which is
 written in [doc/smush.md][manual].
 
 
@@ -128,15 +99,18 @@ points when proposing changes:
    issues with monkey-patching in caller environment.
 
 
- [github]:         https://github.com/gvvaughan/smush
+ [bundles]:        doc/smush.md#3-bundles
+ [crush]:          doc/smush.md#41-build-scripts
  [github.io]:      https://gvvaughan.github.io/smush
+ [github]:         https://github.com/gvvaughan/smush
  [issues]:         https://github.com/gvvaughan/smush/issues
  [lua]:            https://www.lua.org
- [luke]:           https://github.com/gvvaughan/luke
  [luajit]:         https://luajit.org
+ [luke]:           https://github.com/gvvaughan/luke
  [manual]:         doc/smush.md
  [mit]:            https://mit-license.org
  [smush]:          https://github.com/gvvaughan/smush
+ [standalone]:     doc/smush.md#4-standalone-programs
  [std.functional]: https://github.com/lua-stdlib/functional
  [std.normalize]:  https://github.com/lua-stdlib/normalize
  [std.prototype]:  https://github.com/lua-stdlib/prototype
