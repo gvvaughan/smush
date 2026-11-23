@@ -484,7 +484,7 @@ local function crush_program(source, dir)
          found:close()
          return kept
       end
-      if succeeded(execute('mkdir -p ' .. quoted(cache))) then
+      if succeeded(execute('mkdir -p ' .. quoted(cache) .. ' 2>/dev/null')) then
          tmp = line_of('mktemp ' .. quoted(cache .. '/crush.XXXXXX'))
       end
    end
