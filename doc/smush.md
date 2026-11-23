@@ -3,24 +3,13 @@ layout: default
 ---
 # SMUSH
 
-[Smush] bundles Lua modules into a single file, with their comments and
-white space squeezed out, to run as a program or to load as a module, for
-[LuaJIT] and [Lua] 5.1 through 5.5:
+[Smush] bundles Lua modules into a single file, with their comments and white
+space squeezed out, to run as a program or to load as a module, for [LuaJIT]
+and [Lua] 5.1 through 5.5.  It runs wherever there is a Lua.  It also has the
+tools for a machine that has only a shell and a C compiler: `smush barf`
+packs files into an archive that a C compiler can unpack, and `smush crush`
+runs a build script there.  See [Standalone Programs](#4-standalone-programs).
 
- * one file to ship, with [nothing to install](#1-installation) but Lua
- * a [command line](#2-command-line) that takes the modules to bundle,
-   by path or by name
- * bundled modules that run in an [environment of their own](#4-the-environment-of-a-bundle),
-   so a bundle and the host it is loaded into never see each other's
-   copies of a library
- * [aliases](#3-sources) that make libraries which each keep a copy of one
-   file share a single bundled copy of it
- * [externals](#5-external-modules) for the modules that cannot be bundled,
-   such as those written in C
- * [warnings](#6-warnings) of the modules that a bundle needs and doesn't have
- * easy to drive [from a rockspec](#7-rockspecs), as [Luke] and [Specl] do
- * a [`--bundled`](#8-what-is-bundled) that a program can offer, to say which
-   rocks are in it, and which smush bundled them
 
 Smush is released under the [MIT license][mit], the same license as Lua
 itself.  There is no warranty.
@@ -43,52 +32,46 @@ branch, so you can copy it into a project of your own.
 
     smush --main=NAME SOURCE... > program
     smush --module=NAME SOURCE... > module.lua
+    smush barf [--compress] [--index] FILE... > files.barf
+    smush crush [--first-run] SCRIPT
 
-Smush writes to standard output.  With `--main=NAME` it writes a script,
-which exits with the result of calling the `main` function of the bundled
-module NAME with the arguments of the command line.  With `--module=NAME`
-it writes a module, which returns the bundled module NAME.  One of them is
-needed.
+Smush writes to standard output.  The first two forms write a
+[bundle](#3-bundles).  The others are for [standalone
+programs](#4-standalone-programs), though `barf` and `crush` are for any
+program that needs an archive that a C compiler can unpack, or a build script
+that a machine with a C compiler can run.
 
-An option that takes a value is written `--NAME=VALUE` or `--NAME VALUE`.
-
-  * `--main=NAME` writes a script that exits with the result of calling the
-    `main` function of the bundled module NAME;
-  * `--module=NAME` writes a module that returns the bundled module NAME;
-  * `--external=NAME` says that the host provides the module NAME to the
-    bundle (see [External Modules](#5-external-modules));
-  * `--readable` keeps the lines and the indentation of each SOURCE, and
-    takes out only its comments, its blank lines and the white space that
-    is not needed, so that the bundle can be read;
   * `--help` shows how to use smush, and exits;
   * `--version` shows which version of smush it is, and exits;
   * `--bundled` says which version of smush it is, and lists the rocks
     bundled in it, one to a line, and exits (see
-    [What is Bundled](#8-what-is-bundled)).
+    [What is Bundled](#36-what-is-bundled)).
 
-Smush exits with an error for any other option.
-
-`smush barf [--compress] [--index] FILE... > files.barf` writes the files as
-a barf, an archive that `host/barfx.c` unpacks with nothing but a C compiler
-to build it, under the paths that are given.  `--compress` compresses the barf with
-LZ4, and `--index` keeps the paths in an index, with the entries numbered.
-
-`smush crush SCRIPT` runs the crush script SCRIPT in the current directory,
-and exits with the status of crush.  Crush is built from `host/crush.c` with
-`$CC` the first time, and the program is kept in `$XDG_CACHE_HOME/smush`, or
-`~/.cache/smush`, named for the text of `crush.c` and for the system, so that
-no run builds it again, or runs a different `crush` that is on the path.
-
-`smush crush --first-run [--keep] SCRIPT > payload.barf` makes a staging
-directory with an empty `barfz` in it, and runs the script there, which is how
-a standalone program is made.  What the script writes to its standard output
-goes to standard error.  Smush writes a compressed barf of the files that the
-script leaves below `barfz`, removes the staging directory, and exits with an
-error if the script fails.  `--keep` keeps the staging directory, and shows
-where it is.
+An option that takes a value is written `--NAME=VALUE` or `--NAME VALUE`.
+Smush exits with an error for any option that it does not have.
 
 
-## 3. Sources
+## 3. Bundles
+
+    smush --main=NAME SOURCE... > program
+    smush --module=NAME SOURCE... > module.lua
+
+With `--main=NAME` smush writes a script, which exits with the result of
+calling the `main` function of the bundled module NAME with the arguments of
+the command line.  With `--module=NAME` it writes a module, which returns the
+bundled module NAME.  One of them is needed.
+
+  * `--main=NAME` writes a script that exits with the result of calling the
+    `main` function of the bundled module NAME;
+  * `--module=NAME` writes a module that returns the bundled module NAME;
+  * `--external=NAME` names a module that the host provides to the
+    bundle (see [External Modules](#33-external-modules));
+  * `--readable` keeps the lines and the indentation of each SOURCE, and
+    takes out only its comments, its blank lines and the white space that
+    is not needed, so that the bundle can be read.
+
+
+### 3.1. Sources
 
 Each SOURCE is one of:
 
@@ -115,7 +98,7 @@ MODULE has to be bundled, and ALIAS can't be, or be external, already, or
 smush exits with an error that says so.
 
 
-## 4. The Environment of a Bundle
+### 3.2. The Environment of a Bundle
 
 The modules of a bundle run in an environment of their own, with copies of
 the globals, and a `require` and a `package.loaded` of their own, so:
@@ -123,7 +106,7 @@ the globals, and a `require` and a `package.loaded` of their own, so:
   * a bundled module never finds a module of the same name that the host
     has loaded, nor does it see the host's `package.path` or
     `package.loaded`, except for the modules that are
-    [external](#5-external-modules);
+    [external](#33-external-modules);
   * the `package.loaded` of a bundle has the standard libraries, and its own
     `_G` and `package`, so `require 'string'` works in a bundle, as it does
     anywhere;
@@ -139,7 +122,7 @@ the globals, and a `require` and a `package.loaded` of their own, so:
     it tests, be one file that has no place in a LuaRocks tree.
 
 
-## 5. External Modules
+### 3.3. External Modules
 
 A module that has a C part, such as `lpeg` or `yaml`, can't be bundled, so
 bundle the Lua modules that use it, and say that the host provides it:
@@ -153,7 +136,7 @@ gives the bundle the host's real `package`, which a program that sets
 search paths for code that it runs, as a test runner does, needs.
 
 
-## 6. Warnings
+### 3.4. Warnings
 
 Smush warns of a module in the Lua path that a bundled module names, but
 that is not bundled, when it is neither external nor only asked for with
@@ -167,7 +150,7 @@ A module that is part of a bundled module, such as `optparse._strict` of
 that a library that has gained a file is not bundled without it.
 
 
-## 7. Rockspecs
+### 3.5. Rockspecs
 
 Smush is easy to drive from the `build` table of a rockspec that is built
 with [luarocks-build-luke].  This is how [Specl] bundles itself:
@@ -198,7 +181,7 @@ A module that is named, as `std.normalize` is, is found in `LUA_PATH`,
 which `luarocks path` sets.
 
 
-## 8. What is Bundled
+### 3.6. What is Bundled
 
 Every bundle has a module `smush.bundled`, which smush writes into it, with
 a function `showbundled`.  It writes the version of the smush that bundled
@@ -233,6 +216,90 @@ end
 [Luke] and [Specl] do, as does `smush --bundled`.  A source of the bundle
 that is called `smush.bundled` is bundled as it is, and smush writes no
 module of that name.
+
+
+## 4. Standalone Programs
+
+Smush has the tools for a program that builds itself, on the machine that
+runs it, from sources that it carries, with nothing on the machine but a
+shell and a C compiler.  The build scripts are written in
+[crush](#41-build-scripts), a small language that a C compiler is all it
+takes to run.  `smush crush --first-run` runs a bootstrap script, which
+gathers the sources, and writes a [payload](#42-making-a-payload), the files
+that it leaves behind, packed.
+
+
+### 4.1. Build Scripts
+
+A build script is written in crush, which is `host/crush.c`, about fourteen
+hundred lines of C99.  It is a build tool for a machine that has a compiler and little
+else: it has no dependencies, and `cc -o crush crush.c` builds it.  The
+language is a small subset of the shell, which is easy to read for anyone who
+knows one, with a few things that it does itself, so that no script needs a
+`curl` or a `sha256sum` that a machine may not have:
+
+    # A name, where to fetch it from, and its sum.
+    dependencies=[
+        lua  https://www.lua.org/ftp/lua-5.1.5.tar.gz  2640fc56a795...
+    ]
+
+    for name url sum in $dependencies {
+        run curl -fsSL -o $name.tar.gz $url
+        sha256 -c $sum:$name.tar.gz
+        run mkdir $name
+        run tar -xzf $name.tar.gz -C $name --strip-components=1
+    }
+
+    run cc -O2 -o $OUT main.c lua/lapi.c lua/lauxlib.c
+
+A script is lines of commands, with `||` to go on if a command fails, `{ }`
+to group commands, `NAME=VALUE` to set a variable of the script, which holds a
+list of words, and `NAME=VALUE command` to set one in the environment of a
+command.  A `for` runs a block once for each word of a list, or for each row
+of one that has several words to a row.  A command that fails ends the
+script, with its status, unless a `||` follows it.  The builtins are `cd`,
+`exit`, `run`, which writes the command that it runs to standard error as it
+runs it, `sha256`, which writes the SHA-256 sum of files, or with `-c` checks
+them, and `embed`, which writes the bytes of a file as C, so that a program
+can hold a file in itself.  `host/crush.c` has the grammar, and the rest of
+the rules, at its head.
+
+`smush crush SCRIPT` runs the crush script SCRIPT in the current directory,
+and exits with the status of crush.  Crush is built from `host/crush.c` with
+`$CC` the first time, and the program is kept in `$XDG_CACHE_HOME/smush`, or
+`~/.cache/smush`, named for the text of `crush.c` and for the system, so that
+no run builds it again, or runs a different `crush` that is on the path.
+
+
+### 4.2. Making a Payload
+
+The payload is a compressed barf of what the program is built from.  A barf is
+an archive that `host/barfx.c` unpacks with nothing but a C compiler to build
+it.  `smush barf [--compress] [--index] FILE... > files.barf` writes the files
+as a barf, under the paths that are given.  `--compress` compresses the barf
+with LZ4, and `--index` keeps the paths in an index, with the entries
+numbered.
+
+`smush crush --first-run SCRIPT > payload.barf` makes an empty `barfz` in the
+current directory, and runs the script, the bootstrap script.  What the script
+writes to its standard output goes to standard error.  Smush writes a
+compressed barf of the files that the script leaves below `barfz`, removes
+`barfz`, and exits with an error if the script fails, or if there is a `barfz`
+already, which it leaves as it is.
+
+The bootstrap script is the author's, and runs where the author is, in the
+current directory, which holds the sources and whatever else it needs.  It is
+free to use `curl` or `wget`, and `tar`, and to put things where it likes, so
+it:
+
+  * fetches what the program depends on, and checks each against a sum that
+    is written in the script, with `sha256 -c`, so that a payload is made of
+    exactly the sources that the author looked at;
+  * copies into `barfz/` what the program is built from, which is a `build`
+    script, in crush, `crush.c` and `barfx.c` so that the first run need not
+    fetch them, and everything that `build` compiles or reads;
+  * removes whatever it fetched or made that is not in `barfz`.  The script is
+    the only one that knows what it left, so it cleans up after itself.
 
 
 Report bugs at the [issue tracker][issues].

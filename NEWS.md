@@ -14,8 +14,8 @@
 
   - `smush crush SCRIPT` runs a crush script with crush, built from
     `host/crush.c` once and kept in `$XDG_CACHE_HOME/smush`.  With
-    `--first-run` it runs the script in a staging directory, and writes a
-    compressed barf of the files that it leaves below `barfz` there.
+    `--first-run` it makes an empty `barfz` first, and writes a compressed
+    barf of the files that the script leaves below it.
 
 
 ## Noteworthy changes in release 0.4 (2026-10-29) [stable]

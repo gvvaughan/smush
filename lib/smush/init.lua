@@ -250,7 +250,7 @@ local OPTIONS = {main = true, module = true, external = true}
 local USAGE = [[
 Usage: smush [OPTION]... SOURCE...
        smush barf [OPTION]... FILE...
-       smush crush [--first-run] [--keep] SCRIPT
+       smush crush [--first-run] SCRIPT
 
 Write a single file that bundles each SOURCE, to standard output.  A SOURCE
 is the path of a module, which is bundled under the name that its path makes,
@@ -295,14 +295,11 @@ Run the crush script SCRIPT in the current directory, and exit with the
 status of crush.  Crush is built from host/crush.c once, and kept in
 $XDG_CACHE_HOME/smush, or ~/.cache/smush, for every later run.
 
-  --first-run  make a staging directory with an empty directory barfz in
-               it, and run SCRIPT there, and not in the current directory.
-               Write a compressed barf of the files that it leaves below
-               barfz to standard output.  What the script writes to its
-               standard output goes to standard error, and the staging
-               directory is removed at the end
-  --keep       with --first-run, keep the staging directory, and show
-               where it is
+  --first-run  make an empty directory barfz in the current directory
+               before SCRIPT runs, and write a compressed barf of the
+               files that it leaves below barfz to standard output, and
+               remove barfz.  What the script writes to its standard
+               output goes to standard error
   --help       show this help, and exit
 ]]
 
@@ -465,15 +462,14 @@ end
 
 -- Run the crush script in *args* with the crush that is built from the
 -- host files, which are next to the bin directory of *script*, the path of
--- the running script.  With --first-run, write a barf of what the script
--- leaves in the barfz of a staging directory that it runs in.
+-- the running script.  With --first-run, make a barfz in the current
+-- directory first, and write a barf of what the script leaves in it, and
+-- remove it.
 local function crush_main(args, script)
-   local first_run, keep, name
+   local first_run, name
    each(args, function(a)
       if a == '--first-run' then
          first_run = true
-      elseif a == '--keep' then
-         keep = true
       elseif a == '--help' then
          write(CRUSH_USAGE)
          exit(0)
@@ -489,10 +485,6 @@ local function crush_main(args, script)
       stderr:write('smush crush: give a SCRIPT\n', CRUSH_USAGE)
       exit(1)
    end
-   if keep and not first_run then
-      stderr:write('smush crush: --keep is for --first-run\n', CRUSH_USAGE)
-      exit(1)
-   end
    local source = host.path('crush.c', script)
    if not source then
       stderr:write('smush crush: no host/crush.c next to the bin directory of ',
@@ -501,11 +493,11 @@ local function crush_main(args, script)
    end
 
    local dir = line_of 'mktemp -d'
+   local made_barfz
    local function finish()
-      if keep then
-         stderr:write('smush crush: kept ', dir, '\n')
-      else
-         execute('rm -rf ' .. quoted(dir))
+      execute('rm -rf ' .. quoted(dir))
+      if made_barfz then
+         execute 'rm -rf barfz'
       end
    end
    local function stop(message)
@@ -525,17 +517,18 @@ local function crush_main(args, script)
       exit(exit_code(ok, how, code))
    end
 
-   local script_path = choose(sub(name, 1, 1) == '/', name,
-      function() return line_of 'pwd' .. '/' .. name end)
-   if not succeeded(execute(format('cd %s && mkdir barfz && %s %s >&2',
-                                   quoted(dir), quoted(crush),
-                                   quoted(script_path)))) then
+   if not succeeded(execute 'mkdir barfz 2>/dev/null') then
+      stop 'cannot make barfz, which may be there already'
+   end
+   made_barfz = true
+   if not succeeded(execute(format('%s %s >&2', quoted(crush),
+                                   quoted(name)))) then
       stop('the script ' .. name .. ' failed')
    end
 
    local entries = {}
-   for i, p in ipairs(files_below(dir .. '/barfz')) do
-      local data, err = slurp(File(dir .. '/barfz/' .. p))
+   for i, p in ipairs(files_below 'barfz') do
+      local data, err = slurp(File('barfz/' .. p))
       if data == nil then
          stop(err)
       end
