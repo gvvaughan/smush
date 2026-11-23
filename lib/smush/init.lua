@@ -17,6 +17,7 @@
 
 local Lexer = require 'smush.lexer'.prototype
 local barf = require 'smush.barf'
+local cminify = require 'smush.c'.minify
 local host = require 'smush.host'
 local minify = require 'smush.minify'
 local _context = require 'std.prototype.contextmanager'
@@ -251,6 +252,7 @@ local USAGE = [[
 Usage: smush [OPTION]... SOURCE...
        smush barf [OPTION]... FILE...
        smush crush [--first-run] SCRIPT
+       smush standalone NAME PAYLOAD
 
 Write a single file that bundles each SOURCE, to standard output.  A SOURCE
 is the path of a module, which is bundled under the name that its path makes,
@@ -273,6 +275,7 @@ have a copy of one file share the one.
 
 `smush barf --help` shows how to write a barf of files, and not a bundle.
 `smush crush --help` shows how to run a crush script, and not write a bundle.
+`smush standalone --help` shows how to write a standalone program.
 ]]
 
 
@@ -308,6 +311,21 @@ $XDG_CACHE_HOME/smush, or ~/.cache/smush, for every later run.
 ]]
 
 
+local STANDALONE_USAGE = [[
+Usage: smush standalone NAME PAYLOAD
+
+Write the standalone program called NAME to standard output, for a redirection
+to put in a file of any name: the script that builds the program on its first
+run (host/stub.sh.in) with the minified host/barfx.c in it, followed by the
+file PAYLOAD, which `smush crush --first-run` writes.  NAME is what the program
+calls itself, and what the directory that it is kept in is named for.  The
+program keeps what it builds in the cache of the user, in a directory that has
+the checksum of PAYLOAD in its name, and starts that program on every run after
+the first.
+The file is not executable until chmod makes it so.
+
+  --help  show this help, and exit
+]]
 
 
 -- *s* quoted for a shell.
@@ -574,6 +592,68 @@ local function crush_main(args, script)
 end
 
 
+-- Write the standalone program *name*, with the payload that is in the file
+-- *payload*, to standard output.  Its stub and the C that unpacks the
+-- payload are the host files next to the bin directory of *script*, the path
+-- of the running script.
+local function standalone_main(args, script)
+   local words = {}
+   each(args, function(a)
+      if a == '--help' then
+         write(STANDALONE_USAGE)
+         exit(0)
+      elseif sub(a, 1, 1) == '-' then
+         stderr:write("smush standalone: unrecognized option '", a, "'\n",
+            STANDALONE_USAGE)
+         exit(1)
+      end
+      words[#words + 1] = a
+   end)
+   local name, payload = unpack(words)
+   local function stop(message)
+      stderr:write('smush standalone: ', message, '\n')
+      exit(1)
+   end
+   if #words ~= 2 then
+      stderr:write('smush standalone: give a NAME and a PAYLOAD\n',
+         STANDALONE_USAGE)
+      exit(1)
+   end
+   if not match(name, '^[%w_][%w_.-]*$') then
+      stop('the NAME ' .. name .. ' is not a name for a program and a directory')
+   end
+
+   local texts = {}
+   for _, file in ipairs {'stub.sh.in', 'barfx.c'} do
+      local path = host.path(file, script)
+      if not path then
+         stop('no host/' .. file .. ' next to the bin directory of ' ..
+              tostring(script))
+      end
+      local text, err = slurp(File(path))
+      if text == nil then
+         stop(err)
+      end
+      texts[file] = text
+   end
+   local bytes, err = slurp(File(payload))
+   if bytes == nil then
+      stop(err)
+   end
+   local crc, size = match(line_of('cksum < ' .. quoted(payload)) or '',
+                           '^(%d+) (%d+)')
+   if not crc then
+      stop('cannot find the checksum of ' .. payload)
+   end
+
+   write((gsub(texts['stub.sh.in'], '@(%u[%u_]*)@', {
+      NAME = name,
+      ID = crc .. '-' .. size,
+      BARFX_C = gsub(cminify(texts['barfx.c'], {name = 'barfx.c'}), '\n$', ''),
+   })), bytes)
+end
+
+
 --- Write a single file that bundles *sources*.
 -- A source is a path, NAME=PATH, or the name of a module in the Lua path.
 -- With `--module=NAME` the file is a module that returns the bundled
@@ -589,6 +669,9 @@ local function main(args)
    end
    if args[1] == 'crush' then
       return crush_main({unpack(args, 2)}, args[0])
+   end
+   if args[1] == 'standalone' then
+      return standalone_main({unpack(args, 2)}, args[0])
    end
    local script, entry, sources, known, externals = true, nil, {}, {}, {}
    local aliases = {}

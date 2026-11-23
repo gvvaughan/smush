@@ -545,3 +545,69 @@ specify smush:
   - it refuses a missing script and an unknown option:
       expect(smush('.', 'crush').status).to_be(1)
       expect(smush('.', 'crush', '--no-such', 'x').status).to_be(1)
+
+- describe standalone:
+  - before: |
+      barf = require 'smush.barf'
+
+      -- A payload in a new directory, which is returned with it.
+      function with_payload()
+         local dir = os.tmpname()
+         os.remove(dir)
+         assert(os.execute('mkdir ' .. dir))
+         local payload = barf.pack({{path = 'build', data = 'exit 0\n'}},
+                                   {compress = true})
+         spit(dir .. '/payload.barf', payload)
+         return dir, payload
+      end
+
+  - it writes the stub with its name and the checksum of the payload, and then the payload: |
+      local dir, payload = with_payload()
+      local got = smush('.', 'standalone', 'hello', dir .. '/payload.barf')
+      local crc, size = io.popen('cksum < ' .. dir .. '/payload.barf'):
+         read('*l'):match '^(%d+) (%d+)'
+      os.execute('rm -rf ' .. dir)
+      expect(got.status).to_be(0)
+      expect(got.output).to_match '^#!/bin/sh\n# hello: '
+      expect(got.output).to_contain('/hello/' .. crc .. '-' .. size .. '-$system')
+      expect(got.output).not_to_match '@%u[%u_]*@'
+      expect(got.output:sub(-#payload)).to_be(payload)
+
+  - it puts C that unpacks the payload in the stub: |
+      local dir, payload = with_payload()
+      local got = smush('.', 'standalone', 'hello', dir .. '/payload.barf')
+      local c = got.output:match "<<'END_OF_BARFX_C'\n(.-)\nEND_OF_BARFX_C\n"
+      spit(dir .. '/barfx.c', c)
+      spit(dir .. '/hello', got.output)
+      local unpacked = io.popen(('cd %s && ${CC:-cc} -D_XOPEN_SOURCE=700 ' ..
+         '-o barfx barfx.c && mkdir out && cd out && ../barfx ../hello ' ..
+         '&& cat build'):format(dir)):read '*a'
+      os.execute('rm -rf ' .. dir)
+      expect(c).not_to_contain '/*'
+      expect(unpacked).to_be 'exit 0\n'
+
+  - it refuses a name or a payload that it cannot use: |
+      local dir = with_payload()
+      local payload = dir .. '/payload.barf'
+      for _, bad in ipairs {
+         {args = {'a b', payload}, why = 'is not a name'},
+         {args = {'../x', payload}, why = 'is not a name'},
+         {args = {'hello', dir .. '/none'}, why = 'none'},
+         {args = {'--no-such', 'hello', payload},
+          why = 'unrecognized option'},
+         {args = {'hello'}, why = 'give a NAME and a PAYLOAD'},
+      } do
+         local got = smush('.', 'standalone', unpack(bad.args))
+         expect(got.status).to_be(1)
+         expect(got.errout).to_contain(bad.why)
+         expect(got.output).to_be ''
+      end
+      os.execute('rm -rf ' .. dir)
+
+  - it needs the host files next to the bin directory: |
+      local dir = with_payload()
+      local got = smush_as('/nowhere/bin/smush', '.', 'standalone', 'hello',
+                           dir .. '/payload.barf')
+      os.execute('rm -rf ' .. dir)
+      expect(got.status).to_be(1)
+      expect(got.errout).to_contain 'no host/stub.sh.in next to the bin directory'

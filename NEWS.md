@@ -20,6 +20,10 @@
     `--first-run` it makes an empty `barfz` first, and writes a compressed
     barf of the files that the script leaves below it.
 
+  - `smush standalone NAME PAYLOAD` writes a standalone program called
+    NAME: a script that builds itself on its first run, from the barf that
+    `smush crush --first-run` writes, and keeps what it builds in the cache.
+
 
 ## Noteworthy changes in release 0.4 (2026-10-29) [stable]
 

@@ -177,8 +177,7 @@ path_ok(const char *p)
     if (*p == '/')
         return 0;
     for (;;) {
-        for (n = 0; p[n] != '\0' && p[n] != '/'; n++)
-            ;
+        n = strcspn(p, "/");
         if (n == 0 || (n == 2 && p[0] == '.' && p[1] == '.'))
             return 0;
         if (!p[n])

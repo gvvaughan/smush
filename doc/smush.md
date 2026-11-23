@@ -3,13 +3,32 @@ layout: default
 ---
 # SMUSH
 
-[Smush] bundles Lua modules into a single file, with their comments and white
-space squeezed out, to run as a program or to load as a module, for [LuaJIT]
-and [Lua] 5.1 through 5.5.  It runs wherever there is a Lua.  It also has the
-tools for a machine that has only a shell and a C compiler: `smush barf`
-packs files into an archive that a C compiler can unpack, and `smush crush`
-runs a build script there.  See [Standalone Programs](#4-standalone-programs).
+[Smush] ships Lua code as one file, in either of two ways, for [LuaJIT] and
+[Lua] 5.1 through 5.5:
 
+ * a [bundle](#3-bundles) squeezes Lua modules, with their comments and white
+   space taken out, into one Lua file, to run as a program or to load as a
+   module.  It runs wherever there is a Lua
+ * a [standalone program](#4-standalone-programs) is one file that carries
+   its own Lua, and the C and Lua libraries it uses.  It builds itself the
+   first time that it runs, on a machine that has a shell and a C compiler,
+   and needs no Lua, no LuaRocks and no network
+
+Both are made by the one [`smush` command](#2-command-line), and each has what
+the other lacks:
+
+|                           | bundle                  | standalone program            |
+| ------------------------- | ----------------------- | ----------------------------- |
+| needs on the machine      | Lua                     | a shell and a C compiler      |
+| holds                     | Lua modules             | Lua modules, C, and a Lua     |
+| C modules                 | [external](#33-external-modules) | built in, if the program has them |
+| made by                   | `smush --main`          | `smush crush --first-run`, then `smush standalone` |
+| first run                 | starts at once          | builds, then starts           |
+
+A bundle is the way to ship a library or a tool to people who have Lua
+already.  A standalone program is the way to ship a tool to people who may
+not, such as a program that builds Lua code, which has to run before there is
+a Lua to run it.
 
 Smush is released under the [MIT license][mit], the same license as Lua
 itself.  There is no warranty.
@@ -27,6 +46,9 @@ builds it, from the rockspec, with [Luke].
 Each release also commits that file, `build-aux/smush`, to its release
 branch, so you can copy it into a project of your own.
 
+The [standalone smush](#46-smush-as-a-standalone-program) is made as any other
+standalone program is, and has no need of Lua or LuaRocks at all.
+
 
 ## 2. Command Line
 
@@ -34,6 +56,7 @@ branch, so you can copy it into a project of your own.
     smush --module=NAME SOURCE... > module.lua
     smush barf [--compress] [--index] FILE... > files.barf
     smush crush [--first-run] SCRIPT
+    smush standalone NAME PAYLOAD > FILE
 
 Smush writes to standard output.  The first two forms write a
 [bundle](#3-bundles).  The others are for [standalone
@@ -135,6 +158,9 @@ module is then the host's, and is shared with it.  `--external=package`
 gives the bundle the host's real `package`, which a program that sets
 search paths for code that it runs, as a test runner does, needs.
 
+A program that has to carry its C modules too is a [standalone
+program](#4-standalone-programs), which links them in.
+
 
 ### 3.4. Warnings
 
@@ -220,13 +246,23 @@ module of that name.
 
 ## 4. Standalone Programs
 
-Smush has the tools for a program that builds itself, on the machine that
-runs it, from sources that it carries, with nothing on the machine but a
-shell and a C compiler.  The build scripts are written in
-[crush](#41-build-scripts), a small language that a C compiler is all it
-takes to run.  `smush crush --first-run` runs a bootstrap script, which
-gathers the sources, and writes a [payload](#42-making-a-payload), the files
-that it leaves behind, packed.
+A standalone program is for a tool that has to run on a machine that has no
+Lua, or no Lua that is the one that the tool needs.  It is one file, which
+holds the sources that the program is built from, and a script that builds
+them.  What is built is the program of the machine that it is built on, so
+nothing about the machine, except that it has a shell and a C compiler, is
+assumed when the file is made.
+
+There are three steps:
+
+  1. a build script, that makes the program from its sources on the machine
+     that runs it, and a bootstrap script, that gathers those sources on the
+     machine of the author, are written in [crush](#41-build-scripts), a small
+     language that a C compiler is all it takes to run;
+  2. `smush crush --first-run` runs the bootstrap script, and writes a
+     [payload](#42-making-a-payload), the files that it leaves behind, packed;
+  3. `smush standalone` writes the [program](#43-assembling-the-program), as
+     one file, from the payload.
 
 
 ### 4.1. Build Scripts
@@ -328,6 +364,82 @@ and of the modules with `smush barf --index -C`, which gives them the paths
 that `require` looks for them by, and makes that into the C of `barfz/data.c`
 with `embed`.  The build script is one command, that compiles all of those
 with `$CC`.
+
+
+### 4.3. Assembling the Program
+
+    smush crush --first-run standalone/bootstrap > payload.barf
+    smush standalone smush payload.barf > smush-0.5.sh
+    chmod +x smush-0.5.sh
+
+`smush standalone NAME PAYLOAD > FILE` writes the program called NAME to FILE,
+which is `host/stub.sh.in`, a shell script, with `@NAME@` filled in with NAME,
+`@ID@` with the checksum of the payload, as `cksum` writes it, and `@BARFX_C@`
+with `host/barfx.c` with its comments and white space squeezed out, followed by
+the payload.  NAME is what the program calls itself, in its messages and in
+the name of its cache directory, so it has to be safe in a file name.  FILE is
+only where the program is kept, and may be called anything, such as the
+version of the release.  FILE is a program once `chmod +x` has made it
+executable.  Nothing is built until it runs.
+
+
+### 4.4. The First Run
+
+The first time a standalone program runs, on a machine, it:
+
+  1. compiles `barfx`, from the C in the file, and unpacks the payload with
+     it into a directory of `$TMPDIR`;
+  2. compiles `crush.c` from the payload;
+  3. runs `build` from the payload with crush, in the directory that the
+     payload was unpacked in, with these in the environment:
+
+     * `CC`, the C compiler, `cc` if unset;
+     * `CFLAGS`, `-O2` if unset;
+     * `LDFLAGS`;
+     * `LIBS`, `-lm` if unset, for the math library that Lua needs.  The
+       build script uses only what is in `LIBS`, so a machine that needs more,
+       or less, sets it, to nothing if it has the math library already;
+     * `OUT`, the file that `build` has to make;
+
+  4. keeps the file `OUT` in `$XDG_CACHE_HOME/NAME/ID-SYSTEM-MACHINE/NAME`,
+     or under `~/.cache` if `XDG_CACHE_HOME` is not set, and starts it with the
+     arguments that it was given.
+
+The first run reports that it is building, on standard error, and a build that
+fails keeps nothing, so the next run builds again.  The ID makes the directory
+of a new version of the program another one, and the system and machine keep
+the programs of machines that share a home directory apart.  Every later run
+starts the kept program, and nothing else.
+
+
+### 4.5. The Program
+
+`standalone/build` of smush shows what a build script makes: a program from
+`host/main.c`, which is linked with Lua, and the `data.c` that `embed` wrote.
+`data.c` holds `runtime_data` and `runtime_size`, the bytes of an indexed barf
+of the Lua files of the program, and `main.c` is all of the C that is the same
+for every program.  The program:
+
+  * runs `main.lua` from the barf, with its arguments, and with them in the
+    table `arg`;
+  * finds a module with `require` in the barf, and nowhere else, so that a
+    module that is not in the program is an error, and is never one that
+    happens to be on the machine.  It is compiled when it is first required,
+    so a program starts as fast as the modules that it needs allow;
+  * builds with LuaJIT or Lua 5.1 through 5.5, whichever the build links it
+    with, and runs the Lua of the program in that.
+
+A program with C modules compiles `main.c` with `-DHOST_MODULES`, and links a
+file that defines `host_modules`, a list of `luaL_Reg` ended by `{NULL, NULL}`.
+`require` finds those by name before the barf.
+
+
+### 4.6. Smush as a Standalone Program
+
+`smush` is itself a standalone program, made by `standalone/bootstrap` and
+`standalone/build`, so that there is a smush where there is no Lua, and no
+LuaRocks.  Its runtime is `lib/smush/*.lua`, the std modules, and the host
+files `crush.c`, `barfx.c` and `stub.sh.in`.
 
 
 Report bugs at the [issue tracker][issues].
