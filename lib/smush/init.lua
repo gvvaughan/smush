@@ -280,8 +280,12 @@ local BARF_USAGE = [[
 Usage: smush barf [OPTION]... FILE...
 
 Write a barf of each FILE, to standard output, under the path that is
-given for it.
+given for it.  A directory includes all the files below it.
 
+  -C DIR      change to DIR to find the FILEs after it, but store them
+              with the relative path as given on the command line.  It
+              lasts until the next -C, and DIR is always from the
+              current directory
   --compress  compress the barf with LZ4
   --index     keep the paths in an index, and number the entries
   --help      show this help, and exit
@@ -304,35 +308,6 @@ $XDG_CACHE_HOME/smush, or ~/.cache/smush, for every later run.
 ]]
 
 
--- Write a barf of the files in *args*, to standard output.
-local function barf_main(args)
-   local opts, entries = {}, {}
-   each(args, function(a)
-      if a == '--compress' or a == '--index' then
-         opts[sub(a, 3)] = true
-      elseif a == '--help' then
-         write(BARF_USAGE)
-         exit(0)
-      elseif sub(a, 1, 1) == '-' then
-         stderr:write("smush barf: unrecognized option '", a, "'\n",
-            BARF_USAGE)
-         exit(1)
-      else
-         local data, err = slurp(File(a))
-         if data == nil then
-            stderr:write('smush barf: ', err, '\n')
-            exit(1)
-         end
-         entries[#entries + 1] = {path = a, data = data}
-      end
-   end)
-   local ok, bytes = pcall(barf.pack, entries, opts)
-   if not ok then
-      stderr:write('smush barf: ', bytes, '\n')
-      exit(1)
-   end
-   write(bytes)
-end
 
 
 -- *s* quoted for a shell.
@@ -375,13 +350,69 @@ end
 
 -- The relative paths of the files below the directory *dir*, sorted.
 local function files_below(dir)
-   local pipe = popen('cd ' .. quoted(dir) .. " && find . -type f | sort")
+   local pipe = popen('cd ' .. quoted(dir) ..
+      " && find . -type f | LC_ALL=C sort")
    local paths = {}
    for p in pipe:lines() do
       paths[#paths + 1] = sub(p, 3)
    end
    pipe:close()
    return paths
+end
+
+
+-- Write a barf of the files in *args*, to standard output.  A directory
+-- includes all the files below it, and `-C DIR` changes to DIR to find
+-- the names after it, but stores them as they were given.
+local function barf_main(args)
+   local opts, entries = {}, {}
+   local base, taking
+   local function fail(...)
+      stderr:write('smush barf: ', ...)
+      stderr:write '\n'
+      exit(1)
+   end
+   local function add(name, path)
+      local data, err = slurp(File(path))
+      if data == nil then
+         fail(err)
+      end
+      entries[#entries + 1] = {path = name, data = data}
+   end
+   each(args, function(a)
+      if taking then
+         base, taking = a, nil
+      elseif a == '-C' then
+         taking = true
+      elseif a == '--compress' or a == '--index' then
+         opts[sub(a, 3)] = true
+      elseif a == '--help' then
+         write(BARF_USAGE)
+         exit(0)
+      elseif sub(a, 1, 1) == '-' then
+         stderr:write("smush barf: unrecognized option '", a, "'\n",
+            BARF_USAGE)
+         exit(1)
+      else
+         local name = gsub(a, '/+$', '')
+         local path = base and base .. '/' .. name or name
+         if succeeded(execute('test -d ' .. quoted(path))) then
+            each(files_below(path), function(p)
+               add(name .. '/' .. p, path .. '/' .. p)
+            end)
+         else
+            add(name, path)
+         end
+      end
+   end)
+   if taking then
+      fail 'the option -C needs a directory'
+   end
+   local ok, bytes = pcall(barf.pack, entries, opts)
+   if not ok then
+      fail(bytes)
+   end
+   write(bytes)
 end
 
 

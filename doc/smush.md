@@ -280,6 +280,18 @@ as a barf, under the paths that are given.  `--compress` compresses the barf
 with LZ4, and `--index` keeps the paths in an index, with the entries
 numbered.
 
+Each name is a path from the current directory, and the barf stores it just as
+it is written.  `-C DIR` changes to DIR to find the names after it, but the
+barf stores them with the relative path as given on the command line, without
+DIR.  A `-C` applies to the names after it, up to the next `-C`, and its DIR
+is always from the current directory.  A directory includes all the files
+below it, in sorted order.  For example:
+
+    smush barf --index -C lib smush/init.lua -C other/lib std/x/init.lua
+
+reads `lib/smush/init.lua` and `other/lib/std/x/init.lua`, and stores them as
+`smush/init.lua` and `std/x/init.lua`.
+
 `smush crush --first-run SCRIPT > payload.barf` makes an empty `barfz` in the
 current directory, and runs the script, the bootstrap script.  What the script
 writes to its standard output goes to standard error.  Smush writes a

@@ -8,9 +8,12 @@
     that it bundles, and takes out only their comments, their blank lines
     and the white space that is not needed, so that the bundle can be read.
 
-  - `smush barf [--compress] [--index] FILE...` writes the files as a barf,
-    an archive that `host/barfx.c` unpacks, optionally compressed with LZ4
-    and with an index of the paths.
+  - `smush barf [--compress] [--index] [-C DIR] FILE...` writes the files
+    as a barf, an archive that `host/barfx.c` unpacks, optionally
+    compressed with LZ4 and with an index of the paths.  A directory
+    includes all the files below it.  `-C DIR` changes to DIR to find the
+    paths named after it, but stores them in the barf with the relative
+    path as given on the command line.
 
   - `smush crush SCRIPT` runs a crush script with crush, built from
     `host/crush.c` once and kept in `$XDG_CACHE_HOME/smush`.  With

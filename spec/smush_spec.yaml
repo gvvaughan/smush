@@ -340,6 +340,56 @@ specify smush:
       expect(absolute.status).to_be(1)
       expect(absolute.errout).to_contain 'is absolute'
 
+  - describe with -C and directories:
+    - before: |
+        tree = os.tmpname()
+        os.remove(tree)
+        assert(os.execute('mkdir -p ' .. tree .. '/a/sub ' .. tree .. '/b'))
+        spit(tree .. '/a/x', 'x')
+        spit(tree .. '/a/sub/y', 'y')
+        spit(tree .. '/a/sub/w', 'w')
+        spit(tree .. '/b/z', 'z')
+        function paths(...)
+           local got = smush('.', 'barf', ...)
+           local list = {}
+           for i, e in ipairs(unbarf(got.output)) do list[i] = e.path .. '=' .. e.data end
+           return table.concat(list, ' '), got
+        end
+    - after: |
+        os.execute('rm -rf ' .. tree)
+
+    - it looks for the names after -C in that directory, and keeps them as they are written: |
+        expect((paths('-C', tree .. '/a', 'x', '-C', tree .. '/b', 'z'))).
+           to_be 'x=x z=z'
+
+    - it takes each -C from the current directory, and not from the one before: |
+        local list, got = paths('-C', tree, 'a/x', '-C', tree .. '/a', 'sub/y')
+        expect(list).to_be 'a/x=x sub/y=y'
+        expect(got.status).to_be(0)
+
+    - it takes a directory to be all of the files below it, in order: |
+        expect((paths('-C', tree .. '/a', 'sub', 'x'))).
+           to_be 'sub/w=w sub/y=y x=x'
+        expect((paths('-C', tree .. '/a', 'sub/', 'x'))).
+           to_be 'sub/w=w sub/y=y x=x'
+
+    - it keeps the order of the names, in an index: |
+        local got = smush('.', 'barf', '--index', '-C', tree .. '/b', 'z',
+                          '-C', tree .. '/a', 'x')
+        expect(got.status).to_be(0)
+        expect(got.output:sub(1, 9)).to_be '!<barfx>\n'
+        expect(got.output).to_contain '{"z", '
+        expect(got.output:find('{"z", ', 1, true) <
+           got.output:find('{"x", ', 1, true)).to_be(true)
+
+    - it fails for a -C with no directory, or a file that is not in it: |
+        local bare = smush('.', 'barf', 'bin/smush', '-C')
+        expect(bare.status).to_be(1)
+        expect(bare.errout).to_contain 'needs a directory'
+        local missing = smush('.', 'barf', '-C', tree .. '/a', 'z')
+        expect(missing.status).to_be(1)
+        expect(missing.errout).to_contain(tree .. '/a/z')
+
 - describe crush:
   - before: |
       -- Keep what is built in a directory of its own, and not in the cache
