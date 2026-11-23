@@ -1,0 +1,95 @@
+# Smush the source, Luke!
+# Copyright (C) 2026 Gary V. Vaughan
+
+before: |
+  barf = require 'smush.barf'
+
+  local function slurp(path)
+     local file = assert(io.open(path, 'rb'))
+     local text = file:read '*a'
+     file:close()
+     return text
+  end
+
+  -- A crush that runs its script with sh.  The stub only needs a program
+  -- that runs `build`, so these examples need not wait for the real one
+  -- to compile.
+  local CRUSH_C = [[
+     #include <unistd.h>
+
+     int
+     main(int argc, char **argv)
+     {
+         (void) argc;
+         execl("/bin/sh", "sh", argv[1], (char *) 0);
+         return 127;
+     }
+  ]]
+
+  -- Write the stub of a program called `hello` in a new directory, with
+  -- the compressed barf of crush.c and *build*, a shell script, after it
+  -- if there is one, and return the directory.
+  function stubbed(build)
+     local dir = io.popen('mktemp -d'):read '*l'
+     local text = slurp('host/stub.sh.in'):gsub('@(%u[%u_]*)@', {
+        NAME = 'hello', VERSION = '1.0', ID = '42',
+        BARFX_C = slurp('host/barfx.c'),
+     })
+     local file = io.open(dir .. '/hello', 'wb')
+     file:write(text)
+     if build then
+        file:write(barf.pack({
+           {path = 'crush.c', data = CRUSH_C},
+           {path = 'build', data = build},
+        }, {compress = true}))
+     end
+     file:close()
+     return dir
+  end
+
+  -- Run the stub in *dir* with *args*, with the cache and the
+  -- temporary files in *dir*.  Return what it wrote to its standard
+  -- output, its exit status, and what it wrote to its standard error.
+  function started(dir, args)
+     local pipe = io.popen(([[cd %s && XDG_CACHE_HOME=%s/cache \
+        TMPDIR=%s sh ./hello %s 2>%s/err; echo "status $?"]]):
+        format(dir, dir, dir, args or '', dir))
+     local output = pipe:read '*a'
+     pipe:close()
+     local out, status = output:match '^(.*)status (%d+)\n$'
+     return out, tonumber(status), slurp(dir .. '/err')
+  end
+
+  -- What is in the cache of *dir*, one path to a line.
+  function kept(dir)
+     return io.popen('cd ' .. dir ..
+        ' && find cache -type f 2>/dev/null | sort'):read '*a'
+  end
+
+specify stub:
+- it builds the program on the first run, keeps it, and starts it, and starts the kept program on a later run without building it: |
+    local dir = stubbed [[
+       printf '%s\n' '#!/bin/sh' 'echo hello "$@"' > "$OUT"
+    ]]
+    local out, status, err = started(dir, 'a b')
+    expect({out, status}).to_equal {'hello a b\n', 0}
+    expect(err).to_contain 'building a program for this machine'
+    expect(kept(dir)).to_match '^cache/hello/42%-[%w_]+%-[%w_]+/hello\n$'
+    expect({started(dir, 'again')}).to_equal {'hello again\n', 0, ''}
+    os.execute('rm -rf ' .. dir)
+
+- it keeps nothing when the build fails: |
+    local dir = stubbed 'exit 5\n'
+    local out, status, err = started(dir)
+    expect({out, status}).to_equal {'', 1}
+    expect(err).to_contain 'hello: the build failed'
+    expect(kept(dir)).to_be ''
+    os.execute('rm -rf ' .. dir)
+
+- it fails when there is no barf to unpack: |
+    local dir = stubbed()
+    local out, status, err = started(dir)
+    expect({out, status}).to_equal {'', 1}
+    expect(err).to_contain 'hello: cannot unpack this file'
+    expect(kept(dir)).to_be ''
+    os.execute('rm -rf ' .. dir)

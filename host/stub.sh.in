@@ -1,0 +1,107 @@
+#!/bin/sh
+# @NAME@ @VERSION@: a program in one file that builds itself.
+#
+# The first run builds a program for this machine with $CC and keeps it
+# in ${XDG_CACHE_HOME:-$HOME/.cache}/@NAME@/@ID@-SYSTEM-MACHINE, and
+# every later run starts the kept program.  The sources for the build
+# are in a compressed barf at the end of this file.  To unpack it, the
+# first run compiles barfx from the C below (smush's host/barfx.c),
+# and then it compiles crush, which runs the build script.
+#
+# The barf has these files, as the author of the program put them there:
+#   crush.c   the source of crush, which runs `build`
+#   build     a crush script that makes the program as the file $OUT.  It
+#             runs in the directory where the barf is unpacked, with CC,
+#             CFLAGS (-O2 if unset), LDFLAGS, LIBS and OUT in its
+#             environment
+#   the rest  whatever `build` needs, for the program to be made from
+
+# What the environment does not set.
+: ${CC:="cc"}
+: ${CFLAGS:="-O2"}
+: ${TMPDIR:="/tmp"}
+: ${HOME:="/tmp"}
+: ${XDG_CACHE_HOME:="$HOME/.cache"}
+
+# The system, with the generic names that go with it, as luke and
+# luarocks name them.  The first name is the system itself.
+case `uname -s` in
+   AIX)           os='aix unix' ;;
+   CYGWIN*)       os='cygwin unix' ;;
+   Darwin)        os='macosx bsd unix' ;;
+   FreeBSD)       os='freebsd bsd unix' ;;
+   Haiku)         os='haiku unix' ;;
+   Linux)         os='linux unix' ;;
+   MINGW*)        os='mingw32 win32 windows' ;;
+   MSYS*)         os='msys cygwin unix' ;;
+   NetBSD)        os='netbsd bsd unix' ;;
+   OpenBSD)       os='openbsd bsd unix' ;;
+   QNX|procnto*)  os=qnx ;;
+   SunOS)         os='solaris unix' ;;
+   *)             os="`uname -s` unix" ;;
+esac
+system=${os%% *}
+cache=$XDG_CACHE_HOME/@NAME@/@ID@-$system-`uname -m`
+
+if [ -x "$cache/@NAME@" ]; then
+   exec "$cache/@NAME@" "$@"
+fi
+
+die() {
+   echo "@NAME@: $*" >&2
+   exit 1
+}
+
+self=$0
+case $self in */*) ;; *) self=`command -v -- "$self"` ;; esac
+case $self in /*) ;; *) self=$PWD/$self ;; esac
+
+echo "@NAME@: building a program for this machine, once, in $cache" >&2
+work=`mktemp -d "$TMPDIR/@NAME@.XXXXXX"` || exit 1
+trap 'rm -rf "$work"' EXIT
+trap 'exit 1' HUP INT TERM
+
+mkdir "$work/src" || die "cannot make a directory in $TMPDIR"
+cat > "$work/barfx.c" <<'END_OF_BARFX_C'
+@BARFX_C@
+END_OF_BARFX_C
+
+# The feature macros that each system needs before its headers declare
+# fseeko and fchmod.  They are the same ones that luaposix defines.
+for part in $os; do
+   case $part in
+      unix)         CPPFLAGS="$CPPFLAGS -D_POSIX_C_SOURCE=200809L"
+                    CPPFLAGS="$CPPFLAGS -D_XOPEN_SOURCE=700"
+                    CPPFLAGS="$CPPFLAGS -D_FILE_OFFSET_BITS=64" ;;
+      bsd)          CPPFLAGS="$CPPFLAGS -D_BSD_SOURCE" ;;
+      aix)          CPPFLAGS="$CPPFLAGS -D_ALL_SOURCE" ;;
+      freebsd)      CPPFLAGS="$CPPFLAGS -D__BSD_VISIBLE" ;;
+      linux)        CPPFLAGS="$CPPFLAGS -D_BSD_SOURCE -D_DEFAULT_SOURCE" ;;
+      macosx)       CPPFLAGS="$CPPFLAGS -D_DARWIN_C_SOURCE" ;;
+      qnx)          CPPFLAGS="$CPPFLAGS -D_POSIX_C_SOURCE=200112L" ;;
+   esac
+done
+
+$CC -O1 $CPPFLAGS -o "$work/barfx" "$work/barfx.c" $LDFLAGS $LIBS &&
+   (cd "$work/src" && "$work/barfx" "$self") ||
+   die "cannot unpack this file"
+$CC -O1 $CPPFLAGS -o "$work/crush" "$work/src/crush.c" $LDFLAGS $LIBS ||
+   die "cannot build crush"
+
+(cd "$work/src" &&
+   CC=$CC CFLAGS=$CFLAGS LDFLAGS=$LDFLAGS LIBS=$LIBS OUT="$work/@NAME@" \
+   "$work/crush" ./build >&2) ||
+   { trap - EXIT; die "the build failed, in $work/src"; }
+
+# Copy the program next to its final name and rename it into place, so
+# that a run that starts while another finishes sees the whole program
+# or none of it.
+mkdir -p "$cache" &&
+   cp "$work/@NAME@" "$cache/@NAME@.$$" &&
+   chmod 755 "$cache/@NAME@.$$" &&
+   mv -f "$cache/@NAME@.$$" "$cache/@NAME@" ||
+   { rm -f "$cache/@NAME@.$$"; die "cannot keep the program in $cache"; }
+
+trap - EXIT
+rm -rf "$work"
+exec "$cache/@NAME@" "$@" || exit 1
