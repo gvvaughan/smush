@@ -38,6 +38,11 @@ specify crush:
     expect(out [[printf a > f; printf b >> f; sh -c 'printf c >&2' 2> g; cat f g]]).
        to_be 'abc'
 
+- it writes its words with echo, which has no options and does not read backslashes: |
+    expect(out [[echo a  'b  c' "d"; echo; echo -n x '\n']]).
+       to_be 'a b  c d\n\n-n x \\n\n'
+    expect(out [[x=[1 2]; echo $x > f; echo 3 >> f; cat f]]).to_be '1 2\n3\n'
+
 - it shows a command that run runs, with its words quoted: |
     expect(out [[x=[a 'b c']; run printf '<%s>' $x '']]).
        to_be "% printf '<%s>' a 'b c' ''\n<a><b c><>"

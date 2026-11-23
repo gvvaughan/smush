@@ -261,8 +261,10 @@ script, with its status, unless a `||` follows it.  The builtins are `cd`,
 `exit`, `run`, which writes the command that it runs to standard error as it
 runs it, `sha256`, which writes the SHA-256 sum of files, or with `-c` checks
 them, and `embed`, which writes the bytes of a file as C, so that a program
-can hold a file in itself.  `host/crush.c` has the grammar, and the rest of
-the rules, at its head.
+can hold a file in itself.  `echo` is a builtin too, which writes its words
+with a blank between each and a newline after, and has no options, so that a
+script does not depend on the `echo` that a machine has.  `host/crush.c` has
+the grammar, and the rest of the rules, at its head.
 
 `smush crush SCRIPT` runs the crush script SCRIPT in the current directory,
 and exits with the status of crush.  Crush is built from `host/crush.c` with

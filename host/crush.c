@@ -36,6 +36,9 @@
  * Builtins:
  *
  *     cd [DIR]          change directory (to $HOME without DIR)
+ *     echo [WORD...]    write the words, with a blank between each and
+ *                       a newline after, and no options: `echo -n`
+ *                       writes `-n`
  *     exit [N]          end the script with status N, or with the
  *                       status of the last command
  *     embed NAME FILE   write C that defines the bytes of FILE as
@@ -1148,6 +1151,22 @@ needs_quotes(const char *w)
 }
 
 
+/* The builtin `echo WORD...`.  It writes the words to the standard
+   output, with a blank between each and a newline after, so that a
+   script writes the same on every machine, whatever the echo of its sh
+   does with backslashes and options. */
+static int
+echo(char **argv, size_t argc)
+{
+    size_t i;
+
+    for (i = 1; i < argc; i++)
+        fprintf(stdout, i > 1 ? " %s" : "%s", argv[i]);
+    fputc('\n', stdout);
+    return fflush(stdout) != 0;
+}
+
+
 /* Write the words of ARGV after the first on stderr, behind a "% ", with
    quotes around each word that needs them, so that the line can be
    pasted into a shell. */
@@ -1285,6 +1304,8 @@ run(const statement *c)
             setenv(envs[i].name, envs[i].value, 1);
         if (apply_redirects(c, NULL))
             _exit(1);
+        if (!strcmp(argv.item[0], "echo"))
+            _exit(echo(argv.item, argv.n));
         if (!strcmp(argv.item[0], "embed"))
             _exit(embed(argv.item, argv.n));
         if (!strcmp(argv.item[0], "sha256"))
