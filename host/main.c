@@ -22,8 +22,9 @@
  * `require` finds a module in host_modules, or else in the barf: the
  * Lua path and the C path are not used, so a module that is not in
  * the program is an error, and is never one that happens to be on the
- * machine.  The module `payload` is always there, and payload.read(path)
- * is the bytes of the file `path` of the barf, or nil if there is none.
+ * machine.  The module `smush.payload` is always there, and its
+ * read(path) is the bytes of the file `path` of the barf, or nil if
+ * there is none.
  *
  * It builds with Lua 5.1 to 5.5 and LuaJIT, whichever the build links
  * with, and runs the Lua of the program in that.
@@ -213,7 +214,7 @@ payload_read(lua_State *L)
 }
 
 
-/* The loader of the module `payload`, with the map as its upvalue. */
+/* The loader of the module `smush.payload`, with the map as its upvalue. */
 static int
 open_payload(lua_State *L)
 {
@@ -268,7 +269,7 @@ install(lua_State *L, int map)
     lua_getfield(L, package, "preload");
     lua_pushvalue(L, map);
     lua_pushcclosure(L, open_payload, 1);
-    lua_setfield(L, -2, "payload");
+    lua_setfield(L, -2, "smush.payload");
 #ifdef HOST_MODULES
     {
         const luaL_Reg *m;

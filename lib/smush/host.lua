@@ -51,12 +51,12 @@ local M = {path = path}
 
 
 --- The payload of a standalone program.
--- It is the module `payload` that the program provides, and there is none
--- when smush is not a standalone program.
+-- It is the module `smush.payload` that the program provides, and there
+-- is none when smush is not a standalone program.
 -- @treturn[1] table the payload, with a `read` function
 -- @treturn[2] nil if smush is not a standalone program
 function M.payload()
-   local open_payload = package.preload.payload
+   local open_payload = package.preload['smush.payload']
    return open_payload and open_payload()
 end
 
