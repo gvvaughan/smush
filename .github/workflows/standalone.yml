@@ -1,0 +1,170 @@
+# Smush the source, Luke!
+# Copyright (C) 2026 Gary V. Vaughan
+
+name: standalone
+
+on:
+  push:
+    branches: [ '*' ]
+  pull_request:
+    branches: [ 'master' ]
+
+jobs:
+  standalone:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+
+    runs-on: ${{ matrix.os }}
+
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v7
+
+      # Only the smush that makes the program needs a Lua: the program
+      # carries its own.
+      - uses: luarocks/gh-actions-lua@v14
+        with:
+          luaVersion: "5.4"
+
+      - uses: luarocks/gh-actions-luarocks@v7
+
+      # Building smush makes lib/smush/version.lua, which the bootstrap needs.
+      - name: build
+        run: |
+          luarocks make --force
+
+      - name: make
+        run: |
+          # The bootstrap needs the barf -C of this smush.
+          export PATH="$PWD/bin:$PATH"
+          smush crush --first-run standalone/bootstrap > payload.barf
+          smush standalone smush payload.barf > smush.sh
+          chmod +x smush.sh
+
+      # The environment has no Lua and nothing of luarocks, and a cache
+      # that is empty, so that the first run builds the program.
+      - name: first run
+        run: |
+          env -i HOME="$HOME" PATH=/usr/bin:/bin XDG_CACHE_HOME="$RUNNER_TEMP/cache" \
+              ./smush.sh --version
+
+      - name: later run
+        run: |
+          out=$(env -i HOME="$HOME" PATH=/usr/bin:/bin \
+                XDG_CACHE_HOME="$RUNNER_TEMP/cache" ./smush.sh --version 2>&1)
+          case $out in *building*) echo "$out"; exit 1 ;; esac
+
+      # What the program makes runs with the Lua of the job.
+      - name: bundle
+        run: |
+          echo "return {main = function() print 'bundled' end}" > m.lua
+          env -i HOME="$HOME" PATH=/usr/bin:/bin XDG_CACHE_HOME="$RUNNER_TEMP/cache" \
+              ./smush.sh --main=m m.lua > m
+          test "$(lua m)" = bundled
+
+      # It finds the host files that it needs in its own payload.
+      - name: crush and standalone
+        run: |
+          echo 'echo crushed' > script
+          env -i HOME="$HOME" PATH=/usr/bin:/bin XDG_CACHE_HOME="$RUNNER_TEMP/cache" \
+              ./smush.sh crush script
+          env -i HOME="$HOME" PATH=/usr/bin:/bin XDG_CACHE_HOME="$RUNNER_TEMP/cache" \
+              ./smush.sh standalone other payload.barf > other.sh
+          head -1 other.sh | grep -q '^#!/bin/sh'
+
+  # The standalone smush of the job above has Lua 5.1.5.  Each other release
+  # of Lua is another set of sources to fold into the first-run script, with
+  # a bootstrap and a build of its own, to make and run the same way.
+  lua:
+    strategy:
+      fail-fast: false
+      matrix:
+        lua-version: ["5.2", "5.3", "5.4", "5.5"]
+
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: luarocks/gh-actions-lua@v14
+        with:
+          luaVersion: "5.4"
+
+      - uses: luarocks/gh-actions-luarocks@v7
+
+      - name: build
+        run: |
+          luarocks make --force
+
+      - name: make
+        run: |
+          export PATH="$PWD/bin:$PATH"
+          smush crush --first-run standalone/ci/lua-${{ matrix.lua-version }}/bootstrap > payload.barf
+          smush standalone smush payload.barf > smush.sh
+          chmod +x smush.sh
+
+      - name: first run
+        run: |
+          env -i HOME="$HOME" PATH=/usr/bin:/bin XDG_CACHE_HOME="$RUNNER_TEMP/cache" \
+              ./smush.sh --version
+
+      - name: bundle
+        run: |
+          echo "return {main = function() print 'bundled' end}" > m.lua
+          env -i HOME="$HOME" PATH=/usr/bin:/bin XDG_CACHE_HOME="$RUNNER_TEMP/cache" \
+              ./smush.sh --main=m m.lua > m
+          test "$(lua m)" = bundled
+
+  # LuaJIT builds with make, which the machine that runs a first-run script
+  # may not have, so check only that the host builds with it, and runs the
+  # smush that it carries.
+  luajit:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: luarocks/gh-actions-lua@v14
+        with:
+          luaVersion: luajit
+
+      - uses: luarocks/gh-actions-luarocks@v7
+
+      - name: build
+        run: |
+          luarocks make --force
+
+      # The payload has the C of the host, and the Lua of smush as the
+      # data.c that the host runs it from.
+      - name: unpack
+        run: |
+          export PATH="$PWD/bin:$PATH"
+          smush crush --first-run standalone/bootstrap > payload.barf
+          cc -o barfx host/barfx.c
+          mkdir payload
+          (cd payload && ../barfx ../payload.barf)
+
+      - name: host
+        run: |
+          inc=$(luarocks config variables.LUA_INCDIR)
+          lib=$(luarocks config variables.LUA_LIBDIR)
+          liblua=$(ls "$lib"/libluajit*.a | head -1)
+          cc -O2 -Wall -I"$inc" -o host payload/main.c payload/data.c \
+              "$liblua" -lm -ldl
+          ./host --version
+
+      - name: bundle
+        run: |
+          echo "return {main = function() print 'bundled' end}" > m.lua
+          ./host --main=m m.lua > m
+          test "$(lua m)" = bundled
