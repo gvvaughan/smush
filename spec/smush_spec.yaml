@@ -394,26 +394,22 @@ specify smush:
   - before: |
       -- Keep what is built in a directory of its own, and not in the cache
       -- of whoever runs the specs.
-      setenv = require 'posix.stdlib'.setenv
-      was_cache, was_path = os.getenv 'XDG_CACHE_HOME', os.getenv 'PATH'
       cache = os.tmpname()
       os.remove(cache)
       assert(os.execute('mkdir ' .. cache))
-      setenv('XDG_CACHE_HOME', cache)
+      path = os.getenv 'PATH'
       -- What `smush` writes for *args*, run in the directory *dir* as
       -- `--first-run` needs a directory of its own, in a process of
       -- its own so that everything its scripts write is captured.
       shell = require 'specl.shell'
-      here = require 'posix.unistd'.getcwd()
+      here = io.popen('pwd'):read '*l'
       function in_dir(dir, ...)
          local words = {}
          for i, word in ipairs {...} do words[i] = "'" .. word .. "'" end
-         return shell.spawn(('cd %s && lua %s/bin/smush %s'):
-            format(dir, here, table.concat(words, ' ')))
+         return shell.spawn(('cd %s && XDG_CACHE_HOME=%s PATH=%s lua %s/bin/smush %s'):
+            format(dir, cache, path, here, table.concat(words, ' ')))
       end
   - after: |
-      setenv('XDG_CACHE_HOME', was_cache)
-      setenv('PATH', was_path)
       os.execute('rm -rf ' .. cache)
 
   - it writes a compressed barf of the files that the bootstrap leaves in barfz: |
@@ -496,7 +492,7 @@ specify smush:
       spit(dir .. '/bin/crush', '#!/bin/sh\necho unrelated\nexit 9\n')
       assert(os.execute('chmod 755 ' .. dir .. '/bin/crush'))
       spit(dir .. '/bootstrap', 'echo hello > barfz/x\n')
-      setenv('PATH', dir .. '/bin:' .. was_path)
+      path = dir .. '/bin:' .. path
       local first = in_dir(dir, 'crush', '--first-run', 'bootstrap')
       local second = in_dir(dir, 'crush', '--first-run', 'bootstrap')
       os.execute('rm -rf ' .. dir)
@@ -531,12 +527,13 @@ specify smush:
       spit(dir .. '/script', ('sh -c pwd > %s/where\nprintf hi > %s/hello\n' ..
                               "sh -c 'exit 7'\nprintf no > %s/after\n"):
                              format(dir, dir, dir))
-      local got = smush('.', 'crush', dir .. '/script')
+      local got = in_dir(dir, 'crush', dir .. '/script')
       local where = io.open(dir .. '/where'):read '*a'
       local hello = io.open(dir .. '/hello'):read '*a'
       local after = io.open(dir .. '/after')
+      local cwd = io.popen('cd ' .. dir .. ' && pwd'):read '*l'
       os.execute('rm -rf ' .. dir)
-      expect(where).to_be(io.popen('pwd'):read '*l' .. '\n')
+      expect(where).to_be(cwd .. '\n')
       expect(hello).to_be 'hi'
       expect(after).to_be(nil)
       expect(got.status).to_be(7)
