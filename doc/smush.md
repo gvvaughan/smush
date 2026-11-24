@@ -453,6 +453,12 @@ program that is not in a clone or a rock, and a standalone smush makes other
 standalone programs.  It reads them only there, so what it makes is of the
 release that it is, and never of one that is on the machine.
 
+Its Lua is 5.1.5.  `standalone/ci/lua-X.Y/` has a bootstrap and a build for
+each of the other releases of Lua that smush supports, 5.2 to 5.5, which are
+the same except for the sources that the first run builds the program from,
+and the list of the files of them, so that CI can make a standalone smush with
+each.  LuaJIT is built with `make`, and has none.
+
 
 Report bugs at the [issue tracker][issues].
 

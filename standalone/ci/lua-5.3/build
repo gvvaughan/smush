@@ -1,0 +1,16 @@
+# Smush the source, Luke!
+# Copyright (C) 2026 Gary V. Vaughan
+#
+# The build script of a standalone smush on Lua 5.3.6, for the CI of the
+# host: compile the host, the runtime and Lua into the program OUT (see
+# Standalone Programs in doc/smush.md).
+
+lua_c=[
+    lapi lauxlib lbaselib lbitlib lcode lcorolib lctype ldblib ldebug
+    ldo ldump lfunc lgc linit liolib llex lmathlib lmem loadlib
+    lobject lopcodes loslib lparser lstate lstring lstrlib ltable
+    ltablib ltm lundump lutf8lib lvm lzio
+]
+
+run $CC $CFLAGS -DLUA_USE_POSIX -Ilua -o $OUT main.c data.c \
+    lua/$lua_c.c $LDFLAGS $LIBS

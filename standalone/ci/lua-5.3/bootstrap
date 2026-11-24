@@ -1,0 +1,70 @@
+# Smush the source, Luke!
+# Copyright (C) 2026 Gary V. Vaughan
+#
+# The bootstrap script of a standalone smush on Lua 5.3.6, for the CI of the
+# host, which `smush crush --first-run` runs in the root of the source (see
+# Standalone Programs in doc/smush.md).
+
+test -f lib/smush/version.lua || {
+    echo 'bootstrap: build smush first, to make lib/smush/version.lua'
+    exit 1
+}
+
+
+# Everything that this script fetches and makes, except for barfz, is in
+# `work`.  An earlier run that failed may have left it, so start afresh.
+work="$TMPDIR/smush-bootstrap"
+run rm -rf $work
+run mkdir $work
+
+# A name, where to fetch its release from, and the SHA-256 sum of that, for
+# each.  The name is the directory in `work` that the release is unpacked in.
+dependencies=[
+    lua
+        https://www.lua.org/ftp/lua-5.3.6.tar.gz
+        fc5fd69bb8736323f026672b1b7235da613d7177e72558893a0bdcd320466d60
+    normalize
+        https://github.com/lua-stdlib/normalize/archive/refs/tags/v5.1.tar.gz
+        c1da44f822353b26f9e423e6f4ed138d8b7bc3e9bf375e6c2b78f43017d39ebc
+    functional
+        https://github.com/lua-stdlib/functional/archive/refs/tags/v2.1.tar.gz
+        19518c47fda3f7c9a6fbbad40a3fe04259c6dc126919d179822044906f806ab8
+    prototype
+        https://github.com/lua-stdlib/prototype/archive/refs/tags/v2.1.tar.gz
+        5efe9066733088cd670f4202cdbf69017d78cfd4e4f4d3ec5cf15a294608f957
+]
+
+for name url sum in $dependencies {
+    run curl -fsSL -o $work/$name.tar.gz $url || run wget -qO $work/$name.tar.gz $url
+    sha256 -c $sum:$work/$name.tar.gz
+    run mkdir $work/$name
+    run tar -xzf $work/$name.tar.gz -C $work/$name --strip-components=1
+}
+
+# What the first run builds the program from: the Lua sources, without the
+# programs that are not part of the library.
+run mv $work/lua/src barfz/lua
+run rm -f barfz/lua/lua.c barfz/lua/luac.c barfz/lua/Makefile
+run cp host/crush.c host/barfx.c host/main.c barfz
+run cp standalone/ci/lua-5.3/build barfz/build
+
+
+# The runtime: the Lua of smush and of the std modules it needs, under the
+# paths that `require` looks for them by, and the host files that it reads.
+smush_lua=[barf c clexer host init lexer lz4 minify version]
+prototype_lua=[_base container contextmanager object scanner set]
+
+echo "os.exit(require 'smush'.main(arg))" > $work/main.lua
+run smush barf --index \
+    -C lib smush/$smush_lua.lua \
+    -C $work/normalize/lib std/normalize/_core.lua std/normalize/init.lua \
+    -C $work/functional/lib std/functional/_base.lua std/functional/init.lua \
+    -C $work/prototype/lib std/prototype/$prototype_lua.lua \
+    -C . host/crush.c host/barfx.c host/stub.sh.in \
+    -C $work main.lua > $work/runtime.barf
+
+# `embed NAME FILE` writes C that defines NAME_data and NAME_size, which
+# host/main.c uses as runtime_data and runtime_size.
+embed runtime $work/runtime.barf > barfz/data.c
+
+run rm -rf $work
