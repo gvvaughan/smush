@@ -1,8 +1,8 @@
 # Smush the source, Luke!
 
 [![License](http://img.shields.io/:license-mit-blue.svg)](http://mit-license.org)
-[![workflow status](https://github.com/gvvaughan/smush/actions/workflows/spec.yml/badge.svg?branch=master)](https://github.com/gvvaughan/smush/actions)
-[![codecov.io](https://codecov.io/gh/gvvaughan/smush/graph/badge.svg?branch=master)](https://codecov.io/gh/gvvaughan/smush?branch=master)
+[![workflow status](https://github.com/gvvaughan/smush/actions/workflows/spec.yml/badge.svg?branch=release-v0.5)](https://github.com/gvvaughan/smush/actions)
+[![codecov.io](https://codecov.io/gh/gvvaughan/smush/graph/badge.svg?branch=release-v0.5)](https://codecov.io/gh/gvvaughan/smush?branch=release-v0.5)
 
 [Smush][] ships Lua code as one file, in either of two ways, for
 [LuaJIT][] and [Lua][] 5.1, 5.2, 5.3, 5.4 and 5.5:
