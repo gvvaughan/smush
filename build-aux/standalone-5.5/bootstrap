@@ -46,7 +46,7 @@ for name url sum in $dependencies {
 run mv $work/lua/src barfz/lua
 run rm -f barfz/lua/lua.c barfz/lua/luac.c barfz/lua/Makefile
 run cp host/crush.c host/barfx.c host/main.c barfz
-run cp standalone/ci/lua-5.5/build barfz/build
+run cp build-aux/standalone-5.5/build barfz/build
 
 
 # The runtime: the Lua of smush and of the std modules it needs, under the

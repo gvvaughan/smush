@@ -42,7 +42,8 @@ small build language that `smush crush` runs:
     smush standalone NAME payload.barf > FILE
     chmod +x FILE
 
-The same commands make a standalone smush, from `standalone/bootstrap`.
+The same commands make a standalone smush, from
+`build-aux/standalone-5.1/bootstrap`.
 
 The [manual][] has the rest, including the [bundle][bundles] options, the
 [build language][crush], and [how a standalone program

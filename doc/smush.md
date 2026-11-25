@@ -353,13 +353,13 @@ it:
   * removes whatever it fetched or made that is not in `barfz`.  The script is
     the only one that knows what it left, so it cleans up after itself.
 
-The bootstrap and build scripts of smush itself, `standalone/bootstrap` and
-`standalone/build`, are an example.  The bootstrap runs in the root of the
-source, and takes the version of smush from the `lib/smush/version.lua` that
-building smush makes, so build smush first.  It fetches Lua 5.1.5, and the
-std modules that smush needs, into a work directory in `$TMPDIR`, which it
+The bootstrap and build scripts of smush itself, in
+`build-aux/standalone-5.1/`, are an example.  The bootstrap runs in the root
+of the source, and takes the version of smush from the `lib/smush/version.lua`
+that building smush makes, so build smush first.  It fetches Lua 5.1.5, and
+the std modules that smush needs, into a work directory in `$TMPDIR`, which it
 removes when it is done.  It moves the Lua sources into `barfz/`, and copies
-`host/main.c` and `standalone/build` there.  It packs the Lua files of smush
+`host/main.c` and the build script there.  It packs the Lua files of smush
 and of the modules with `smush barf --index -C`, which gives them the paths
 that `require` looks for them by, and makes that into the C of `barfz/data.c`
 with `embed`.  The build script is one command, that compiles all of those
@@ -368,7 +368,7 @@ with `$CC`.
 
 ### 4.3. Assembling the Program
 
-    smush crush --first-run standalone/bootstrap > payload.barf
+    smush crush --first-run build-aux/standalone-5.1/bootstrap > payload.barf
     smush standalone smush payload.barf > smush-0.5.sh
     chmod +x smush-0.5.sh
 
@@ -414,11 +414,11 @@ starts the kept program, and nothing else.
 
 ### 4.5. The Program
 
-`standalone/build` of smush shows what a build script makes: a program from
-`host/main.c`, which is linked with Lua, and the `data.c` that `embed` wrote.
-`data.c` holds `runtime_data` and `runtime_size`, the bytes of an indexed barf
-of the Lua files of the program, and `main.c` is all of the C that is the same
-for every program.  The program:
+`build-aux/standalone-5.1/build` of smush shows what a build script makes: a
+program from `host/main.c`, which is linked with Lua, and the `data.c` that
+`embed` wrote.  `data.c` holds `runtime_data` and `runtime_size`, the bytes of
+an indexed barf of the Lua files of the program, and `main.c` is all of the C
+that is the same for every program.  The program:
 
   * runs `main.lua` from the barf, with its arguments, and with them in the
     table `arg`;
@@ -442,22 +442,22 @@ program.
 
 ### 4.6. Smush as a Standalone Program
 
-`smush` is itself a standalone program, made by `standalone/bootstrap` and
-`standalone/build`, so that there is a smush where there is no Lua, and no
-LuaRocks.  Its runtime is `lib/smush/*.lua`, the std modules, and the host
-files `crush.c`, `barfx.c` and `stub.sh.in`.
-A standalone smush reads those three from its own payload, with
-`smush.payload`, and not from a `host` directory next to a `bin` directory,
-which a standalone smush does not have.  So `smush crush` and `smush standalone` work in a
-program that is not in a clone or a rock, and a standalone smush makes other
-standalone programs.  It reads them only there, so what it makes is of the
-release that it is, and never of one that is on the machine.
+`smush` is itself a standalone program, made by the bootstrap and the build of
+`build-aux/standalone-5.1/`, so that there is a smush where there is no Lua,
+and no LuaRocks.  Its runtime is `lib/smush/*.lua`, the std modules, and the
+host files `crush.c`, `barfx.c` and `stub.sh.in`.  A standalone smush reads
+those three from its own payload, with `smush.payload`, and not from a `host`
+directory next to a `bin` directory, which a standalone smush does not have.
+So `smush crush` and `smush standalone` work in a program that is not in a
+clone or a rock, and a standalone smush makes other standalone programs.  It
+reads them only there, so what it makes is of the release that it is, and
+never of one that is on the machine.
 
-Its Lua is 5.1.5.  `standalone/ci/lua-X.Y/` has a bootstrap and a build for
-each of the other releases of Lua that smush supports, 5.2 to 5.5, which are
-the same except for the sources that the first run builds the program from,
-and the list of the files of them, so that CI can make a standalone smush with
-each.  LuaJIT is built with `make`, and has none.
+Its Lua is 5.1.5.  `build-aux/standalone-X.Y/` has a bootstrap and a build for
+each release of Lua that smush supports, 5.1 to 5.5, which are the same except
+for the sources that the first run builds the program from, and the list of
+the files of them, so that CI can make a standalone smush with each.  LuaJIT
+is built with `make`, and has none.
 
 
 Report bugs at the [issue tracker][issues].

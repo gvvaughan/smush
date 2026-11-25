@@ -3,11 +3,27 @@
 
 name: standalone
 
+# What a standalone program is made from rarely changes, so run only when
+# it does, and on master and its pull requests.
 on:
   push:
-    branches: [ '*' ]
+    branches: [ 'master' ]
+    paths:
+      - 'bin/smush'
+      - 'host/**'
+      - 'lib/smush/**'
+      - 'build-aux/standalone-*/**'
+      - 'smush-dev-1.rockspec'
+      - '.github/workflows/standalone.yml'
   pull_request:
     branches: [ 'master' ]
+    paths:
+      - 'bin/smush'
+      - 'host/**'
+      - 'lib/smush/**'
+      - 'build-aux/standalone-*/**'
+      - 'smush-dev-1.rockspec'
+      - '.github/workflows/standalone.yml'
 
 jobs:
   standalone:
@@ -41,7 +57,7 @@ jobs:
         run: |
           # The bootstrap needs the barf -C of this smush.
           export PATH="$PWD/bin:$PATH"
-          smush crush --first-run standalone/bootstrap > payload.barf
+          smush crush --first-run build-aux/standalone-5.1/bootstrap > payload.barf
           smush standalone smush payload.barf > smush.sh
           chmod +x smush.sh
 
@@ -106,7 +122,7 @@ jobs:
       - name: make
         run: |
           export PATH="$PWD/bin:$PATH"
-          smush crush --first-run standalone/ci/lua-${{ matrix.lua-version }}/bootstrap > payload.barf
+          smush crush --first-run build-aux/standalone-${{ matrix.lua-version }}/bootstrap > payload.barf
           smush standalone smush payload.barf > smush.sh
           chmod +x smush.sh
 
@@ -149,7 +165,7 @@ jobs:
       - name: unpack
         run: |
           export PATH="$PWD/bin:$PATH"
-          smush crush --first-run standalone/bootstrap > payload.barf
+          smush crush --first-run build-aux/standalone-5.1/bootstrap > payload.barf
           cc -o barfx host/barfx.c
           mkdir payload
           (cd payload && ../barfx ../payload.barf)

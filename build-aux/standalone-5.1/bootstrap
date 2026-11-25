@@ -1,9 +1,8 @@
 # Smush the source, Luke!
 # Copyright (C) 2026 Gary V. Vaughan
 #
-# The bootstrap script of a standalone smush on Lua 5.2.4, for the CI of the
-# host, which `smush crush --first-run` runs in the root of the source (see
-# Standalone Programs in doc/smush.md).
+# The bootstrap script of a standalone smush, which `smush crush --first-run`
+# runs in the root of the source (see Standalone Programs in doc/smush.md).
 
 test -f lib/smush/version.lua || {
     echo 'bootstrap: build smush first, to make lib/smush/version.lua'
@@ -21,8 +20,8 @@ run mkdir $work
 # each.  The name is the directory in `work` that the release is unpacked in.
 dependencies=[
     lua
-        https://www.lua.org/ftp/lua-5.2.4.tar.gz
-        b9e2e4aad6789b3b63a056d442f7b39f0ecfca3ae0f1fc0ae4e9614401b69f4b
+        https://www.lua.org/ftp/lua-5.1.5.tar.gz
+        2640fc56a795f29d28ef15e13c34a47e223960b0240e8cb0a82d9b0738695333
     normalize
         https://github.com/lua-stdlib/normalize/archive/refs/tags/v5.1.tar.gz
         c1da44f822353b26f9e423e6f4ed138d8b7bc3e9bf375e6c2b78f43017d39ebc
@@ -44,9 +43,9 @@ for name url sum in $dependencies {
 # What the first run builds the program from: the Lua sources, without the
 # programs that are not part of the library.
 run mv $work/lua/src barfz/lua
-run rm -f barfz/lua/lua.c barfz/lua/luac.c barfz/lua/Makefile
+run rm -f barfz/lua/lua.c barfz/lua/luac.c barfz/lua/print.c barfz/lua/Makefile
 run cp host/crush.c host/barfx.c host/main.c barfz
-run cp standalone/ci/lua-5.2/build barfz/build
+run cp build-aux/standalone-5.1/build barfz/build
 
 
 # The runtime: the Lua of smush and of the std modules it needs, under the
