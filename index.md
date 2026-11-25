@@ -47,7 +47,29 @@ Each release also commits that file, `build-aux/smush`, to its release
 branch, so you can copy it into a project of your own.
 
 The [standalone smush](#46-smush-as-a-standalone-program) is made as any other
-standalone program is, and has no need of Lua or LuaRocks at all.
+standalone program is, and has no need of Lua or LuaRocks at all.  Each
+release attaches it to its page on GitHub as `smush-X.Y.sh`, with the sum in
+`smush-X.Y.sh.sha256` beside it.  Check the sum, make the file executable, and
+run it:
+
+    shasum -a 256 -c smush-0.5.sh.sha256     # sha256sum -c, on Linux
+    chmod +x smush-0.5.sh
+    ./smush-0.5.sh --version
+
+The first run compiles the program from the sources that the file carries,
+which takes a few seconds and needs a shell and a C compiler, and keeps it in
+`$XDG_CACHE_HOME/smush`, or `~/.cache/smush`.  Every later run starts that
+program at once.
+
+To use it as the `smush` command, either rename the file `smush` and put it in
+a directory on your `PATH`, where it acts as a proxy for the program that it
+built, or install the program itself, by setting `SMUSH_STANDALONE_INSTALL_DIR`
+to the directory to put it in:
+
+    env SMUSH_STANDALONE_INSTALL_DIR=$HOME/.local/bin ./smush-0.5.sh
+
+That builds the program and copies it to `$HOME/.local/bin/smush`.  Any
+standalone program supports direct installation like this.
 
 
 ## 2. Command Line
@@ -262,7 +284,7 @@ There are three steps:
 
   1. a build script, that makes the program from its sources on the machine
      that runs it, and a bootstrap script, that gathers those sources on the
-     machine of the author, are written in [crush](#41-build-scripts), a small
+     machine of the author, are written in [crush](crush.md), a small
      language that a C compiler is all it takes to run;
   2. `smush crush --first-run` runs the bootstrap script, and writes a
      [payload](#42-making-a-payload), the files that it leaves behind, packed;
@@ -272,12 +294,11 @@ There are three steps:
 
 ### 4.1. Build Scripts
 
-A build script is written in crush, which is `host/crush.c`, about fourteen
-hundred lines of C99.  It is a build tool for a machine that has a compiler and little
-else: it has no dependencies, and `cc -o crush crush.c` builds it.  The
-language is a small subset of the shell, which is easy to read for anyone who
-knows one, with a few things that it does itself, so that no script needs a
-`curl` or a `sha256sum` that a machine may not have:
+A build script is written in crush, a small build language that a C compiler
+is all it takes to run: `host/crush.c` is about fourteen hundred lines of C99
+with no dependencies, and `cc -o crush crush.c` builds it.  It reads like a
+small subset of the shell, with a few things that it does itself, so that no
+script needs a `curl` or a `sha256sum` that a machine may not have:
 
     # A name, where to fetch it from, and its sum.
     dependencies=[
@@ -293,27 +314,9 @@ knows one, with a few things that it does itself, so that no script needs a
 
     run cc -O2 -o $OUT main.c lua/lapi.c lua/lauxlib.c
 
-A script is lines of commands, with `||` to go on if a command fails, `{ }`
-to group commands, `NAME=VALUE` to set a variable of the script, which holds a
-list of words, and `NAME=VALUE command` to set one in the environment of a
-command.  A `for` runs a block once for each word of a list, or for each row
-of one that has several words to a row.  A command that fails ends the
-script, with its status, unless a `||` follows it.  The builtins are `cd`,
-`exit`, `run`, which writes the command that it runs to standard error as it
-runs it, `sha256`, which writes the SHA-256 sum of files, or with `-c` checks
-them, and `embed`, which writes the bytes of a file as C, so that a program
-can hold a file in itself.  `echo` is a builtin too, which writes its words
-with a blank between each and a newline after, and has no options, so that a
-script does not depend on the `echo` that a machine has.  `host/crush.c` has
-the grammar, and the rest of the rules, at its head.
-
-`smush crush SCRIPT` runs the crush script SCRIPT in the current directory,
-and exits with the status of crush.  Crush is built from `host/crush.c` with
-`$CC` the first time, and the program is kept in `$XDG_CACHE_HOME/smush`, or
-`~/.cache/smush`, named for the text of `crush.c` and for the system, so that
-no run builds it again, or runs a different `crush` that is on the path.
-A script can rely on `$TMPDIR`, which is `/tmp` if the caller has none, for
-the files that it makes and removes.
+[The crush manual](crush.md) describes all of it, and [Running a
+Script](crush.md#8-running-a-script) describes `smush crush`, which runs one in
+the current directory.
 
 
 ### 4.2. Making a Payload
@@ -425,6 +428,10 @@ The first time a standalone program runs, on a machine, it:
   4. keeps the file `OUT` in `$XDG_CACHE_HOME/NAME/ID-SYSTEM-MACHINE/NAME`,
      or under `~/.cache` if `XDG_CACHE_HOME` is not set, and starts it with the
      arguments that it was given.
+
+If the environment sets `SMUSH_STANDALONE_INSTALL_DIR` to a directory, after
+building the program, install it to the named directory. A directory that the
+script cannot write to is an error, with exit status 1.
 
 The first run reports that it is building, on standard error, and a build that
 fails keeps nothing, so the next run builds again.  The ID makes the directory
