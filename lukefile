@@ -23,6 +23,7 @@ release = {
    -- release number are on the gh-pages branch.
    ['gh-pages']       = {
       {['index.md'] = 'doc/smush.md'},
+      {['crush.md'] = 'doc/crush.md'},
       '_config.yml.in',
    },
 }

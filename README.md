@@ -101,7 +101,7 @@ points when proposing changes:
 
 
  [bundles]:        doc/smush.md#3-bundles
- [crush]:          doc/smush.md#41-build-scripts
+ [crush]:          doc/crush.md
  [github.io]:      https://gvvaughan.github.io/smush
  [github]:         https://github.com/gvvaughan/smush
  [issues]:         https://github.com/gvvaughan/smush/issues
