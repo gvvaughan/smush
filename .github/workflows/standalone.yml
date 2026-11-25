@@ -159,12 +159,12 @@ jobs:
           inc=$(luarocks config variables.LUA_INCDIR)
           lib=$(luarocks config variables.LUA_LIBDIR)
           liblua=$(ls "$lib"/libluajit*.a | head -1)
-          cc -O2 -Wall -I"$inc" -o host payload/main.c payload/data.c \
+          cc -O2 -Wall -I"$inc" -o smush-host payload/main.c payload/data.c \
               "$liblua" -lm -ldl
-          ./host --version
+          ./smush-host --version
 
       - name: bundle
         run: |
           echo "return {main = function() print 'bundled' end}" > m.lua
-          ./host --main=m m.lua > m
+          ./smush-host --main=m m.lua > m
           test "$(lua m)" = bundled
