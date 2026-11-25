@@ -48,12 +48,13 @@ before: |
   end
 
   -- Run the stub in *dir* with *args*, with the cache and the
-  -- temporary files in *dir*.  Return what it wrote to its standard
+  -- temporary files in *dir*, and *env*, more of the environment, if
+  -- there is any.  Return what it wrote to its standard
   -- output, its exit status, and what it wrote to its standard error.
-  function started(dir, args)
-     local pipe = io.popen(([[cd %s && XDG_CACHE_HOME=%s/cache \
+  function started(dir, args, env)
+     local pipe = io.popen(([[cd %s && %s XDG_CACHE_HOME=%s/cache \
         TMPDIR=%s sh ./hello %s 2>%s/err; echo "status $?"]]):
-        format(dir, dir, dir, args or '', dir))
+        format(dir, env or '', dir, dir, args or '', dir))
      local output = pipe:read '*a'
      pipe:close()
      local out, status = output:match '^(.*)status (%d+)\n$'
@@ -92,4 +93,67 @@ specify stub:
     expect({out, status}).to_equal {'', 1}
     expect(err).to_contain 'hello: cannot unpack this file'
     expect(kept(dir)).to_be ''
+    os.execute('rm -rf ' .. dir)
+
+- it installs the program that it built in SMUSH_STANDALONE_INSTALL_DIR, and stops without running it: |
+    local dir = stubbed [[
+       printf '%s\n' '#!/bin/sh' 'echo hello "$@"' > "$OUT"
+    ]]
+    os.execute('mkdir ' .. dir .. '/bin')
+    local env = 'SMUSH_STANDALONE_INSTALL_DIR=' .. dir .. '/bin'
+    local out, status, err = started(dir, 'a', env)
+    expect({out, status}).to_equal {'', 0}
+    expect(err).to_contain 'hello: building a program for this machine'
+    expect(err).to_contain('hello: installed ' .. dir .. '/bin/hello\n')
+    expect(io.popen('cd ' .. dir .. ' && ls bin'):read '*a').to_be 'hello\n'
+    expect(io.popen(dir .. '/bin/hello b'):read '*a').to_be 'hello b\n'
+    os.execute('rm -rf ' .. dir)
+
+- it installs the kept program on a later run, and replaces a different one: |
+    local dir = stubbed [[
+       printf '%s\n' '#!/bin/sh' 'echo hello "$@"' > "$OUT"
+    ]]
+    started(dir)
+    os.execute('mkdir ' .. dir .. '/bin && echo old > ' .. dir .. '/bin/hello')
+    local env = 'SMUSH_STANDALONE_INSTALL_DIR=' .. dir .. '/bin'
+    expect({started(dir, 'again', env)}).to_equal {'', 0,
+       'hello: installed ' .. dir .. '/bin/hello\n'}
+    expect(io.popen(dir .. '/bin/hello c'):read '*a').to_be 'hello c\n'
+    expect(io.popen('ls ' .. dir .. '/bin'):read '*a').to_be 'hello\n'
+    os.execute('rm -rf ' .. dir)
+
+- it warns, and runs nothing, when the same program is installed already: |
+    local dir = stubbed [[
+       printf '%s\n' '#!/bin/sh' 'echo hello "$@"' > "$OUT"
+    ]]
+    os.execute('mkdir ' .. dir .. '/bin')
+    local env = 'SMUSH_STANDALONE_INSTALL_DIR=' .. dir .. '/bin'
+    started(dir, nil, env)
+    local out, status, err = started(dir, 'again', env)
+    expect({out, status}).to_equal {'', 0}
+    expect(err).to_contain('hello: SMUSH_STANDALONE_INSTALL_DIR is set, but ' ..
+       dir .. '/bin/hello is the same program already, so nothing was run')
+    expect(err).not_to_contain 'installed'
+    os.execute('rm -rf ' .. dir)
+
+- it runs the program when the variable is empty or unset: |
+    local dir = stubbed [[
+       printf '%s\n' '#!/bin/sh' 'echo hello "$@"' > "$OUT"
+    ]]
+    os.execute('mkdir ' .. dir .. '/bin')
+    expect((started(dir, 'x', 'SMUSH_STANDALONE_INSTALL_DIR='))).to_be 'hello x\n'
+    expect((started(dir, 'y'))).to_be 'hello y\n'
+    expect(io.popen('ls ' .. dir .. '/bin'):read '*a').to_be ''
+    os.execute('rm -rf ' .. dir)
+
+- it fails when the directory is not there, and runs nothing: |
+    local dir = stubbed [[
+       printf '%s\n' '#!/bin/sh' 'echo hello "$@"' > "$OUT"
+    ]]
+    local env = 'SMUSH_STANDALONE_INSTALL_DIR=' .. dir .. '/none'
+    local out, status, err = started(dir, 'a', env)
+    expect({out, status}).to_equal {'', 1}
+    expect(err).to_contain('hello: cannot install the program in ' .. dir ..
+                           '/none')
+    expect(io.popen('ls ' .. dir):read '*a').not_to_contain 'none'
     os.execute('rm -rf ' .. dir)

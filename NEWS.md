@@ -2,6 +2,11 @@
 
 ## Noteworthy changes in release ?.? (????-??-??) [?]
 
+### New features
+
+  - A standalone program, run with `SMUSH_STANDALONE_INSTALL_DIR` set to a
+    directory, installs the program it built there instead of running it.
+
 
 ## Noteworthy changes in release 0.5 (2026-11-24) [stable]
 

@@ -50,7 +50,7 @@ The [standalone smush](#46-smush-as-a-standalone-program) is made as any other
 standalone program is, and has no need of Lua or LuaRocks at all.  Each
 release attaches it to its page on GitHub as `smush-X.Y.sh`, with the sum in
 `smush-X.Y.sh.sha256` beside it.  Check the sum, make the file executable, and
-put it in a directory on your `PATH`, under any name:
+run it:
 
     shasum -a 256 -c smush-0.5.sh.sha256     # sha256sum -c, on Linux
     chmod +x smush-0.5.sh
@@ -60,6 +60,16 @@ The first run compiles the program from the sources that the file carries,
 which takes a few seconds and needs a shell and a C compiler, and keeps it in
 `$XDG_CACHE_HOME/smush`, or `~/.cache/smush`.  Every later run starts that
 program at once.
+
+To use it as the `smush` command, either rename the file `smush` and put it in
+a directory on your `PATH`, where it acts as a proxy for the program that it
+built, or install the program itself, by setting `SMUSH_STANDALONE_INSTALL_DIR`
+to the directory to put it in:
+
+    env SMUSH_STANDALONE_INSTALL_DIR=$HOME/.local/bin ./smush-0.5.sh
+
+That builds the program and copies it to `$HOME/.local/bin/smush`.  Any
+standalone program supports direct installation like this.
 
 
 ## 2. Command Line
@@ -418,6 +428,10 @@ The first time a standalone program runs, on a machine, it:
   4. keeps the file `OUT` in `$XDG_CACHE_HOME/NAME/ID-SYSTEM-MACHINE/NAME`,
      or under `~/.cache` if `XDG_CACHE_HOME` is not set, and starts it with the
      arguments that it was given.
+
+If the environment sets `SMUSH_STANDALONE_INSTALL_DIR` to a directory, after
+building the program, install it to the named directory. A directory that the
+script cannot write to is an error, with exit status 1.
 
 The first run reports that it is building, on standard error, and a build that
 fails keeps nothing, so the next run builds again.  The ID makes the directory

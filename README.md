@@ -59,6 +59,13 @@ The `smush` command is one file, which has the modules of
 bundled in, so they are needed to build it, and nothing but Lua is needed
 to run it.  LuaRocks builds it with [Luke][], from the rockspec.
 
+Each release also ships `smush-X.Y.sh`, a standalone smush that needs no Lua:
+it builds itself with the host machines shell and C compiler the first time
+it runs.  Either Rename it `smush` and put it on your `PATH`, or install the
+program that it builds directly into your `PATH` with:
+
+    env SMUSH_STANDALONE_INSTALL_DIR=$HOME/.local/bin ./smush-X.Y.sh
+
 
 ## Documentation
 

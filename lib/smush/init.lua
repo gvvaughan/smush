@@ -346,6 +346,10 @@ the checksum of PAYLOAD in its name, and starts that program on every run after
 the first.
 The file is not executable until chmod makes it so.
 
+Run with SMUSH_STANDALONE_INSTALL_DIR set to a directory, the program builds
+itself, if it has not yet, copies what it built into that directory, as NAME,
+and stops.
+
   --help  show this help, and exit
 ]]
 

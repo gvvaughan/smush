@@ -29,8 +29,32 @@ esac
 system=${os%% *}
 cache=$XDG_CACHE_HOME/@NAME@/@ID@-$system-`uname -m`
 
+# Install the program $1 in the directory that SMUSH_STANDALONE_INSTALL_DIR
+# names, or report if the same program is there already.
+install_program() {
+   dest=$SMUSH_STANDALONE_INSTALL_DIR/@NAME@
+   if cmp -s "$1" "$dest" 2>/dev/null; then
+      echo "@NAME@: SMUSH_STANDALONE_INSTALL_DIR is set, but $dest is the same program already, so nothing was run; unset it to run @NAME@" >&2
+   elif { cp "$1" "$dest.$$" && chmod 755 "$dest.$$" &&
+          mv -f "$dest.$$" "$dest"; } 2>/dev/null; then
+      echo "@NAME@: installed $dest" >&2
+   else
+      rm -f "$dest.$$"
+      echo "@NAME@: cannot install the program in $SMUSH_STANDALONE_INSTALL_DIR" >&2
+      exit 1
+   fi
+   exit 0
+}
+
+# Start the program $1 with the arguments after it, unless there is a
+# directory to install it in.
+start_program() {
+   [ -z "$SMUSH_STANDALONE_INSTALL_DIR" ] || install_program "$1"
+   exec "$@"
+}
+
 if [ -x "$cache/@NAME@" ]; then
-   exec "$cache/@NAME@" "$@"
+   start_program "$cache/@NAME@" "$@"
 fi
 
 die() {
@@ -90,4 +114,4 @@ mkdir -p "$cache" &&
 
 trap - EXIT
 rm -rf "$work"
-exec "$cache/@NAME@" "$@" || exit 1
+start_program "$cache/@NAME@" "$@" || exit 1
