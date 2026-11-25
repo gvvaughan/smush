@@ -2,6 +2,9 @@
 
 ## Noteworthy changes in release ?.? (????-??-??) [?]
 
+
+## Noteworthy changes in release 0.5.1 (2026-11-25) [stable]
+
 ### New features
 
   - A standalone program, run with `SMUSH_STANDALONE_INSTALL_DIR` set to a
