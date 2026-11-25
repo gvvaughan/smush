@@ -26,6 +26,11 @@
     cache.  A standalone smush finds the host files it needs in its own
     payload, so that `smush crush` and `smush standalone` work in it.
 
+  - `smush bundled [NAME URL SUM]...` writes the module `smush.bundled` of a
+    standalone program, so that its `--bundled` option lists the URLs that
+    its sources were fetched from, as a bundle lists its rocks.  The
+    standalone smush has it.
+
 
 ## Noteworthy changes in release 0.4 (2026-10-29) [stable]
 

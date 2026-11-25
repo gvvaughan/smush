@@ -204,6 +204,15 @@ local function rockof(fname)
 end
 
 
+-- What `--bundled` writes: the version of this smush, which made the program,
+-- the *heading* of what follows, and a line for each of *items*.
+local function bundled_text(heading, items)
+   local version = smush_version()
+   return 'smush ' .. (version and (version .. ' ') or '') .. heading .. ':\n' ..
+      concat(map(items, function(item) return item .. '\n' end))
+end
+
+
 -- The module that a bundle has for what it says with `--bundled`: the
 -- version of this smush, which bundled it, and the rocks that its modules
 -- come from, as the program that it is has them, for it to call from its
@@ -211,11 +220,8 @@ end
 -- have the option.  Its `showbundled` writes with `io.write`, or with the
 -- function that it is given.  *rocks* is a list of `rock version`.
 local function bundled_module(rocks)
-   local version = smush_version()
-   local text = 'smush ' .. (version and (version .. ' ') or '') .. 'bundled:\n' ..
-      concat(map(rocks, function(rock) return rock .. '\n' end))
    return "bundled['smush.bundled']=function()return{showbundled=function(write)(write or io.write)(" ..
-      format('%q', text) .. ')end}end'
+      format('%q', bundled_text('bundled', rocks)) .. ')end}end'
 end
 
 
@@ -271,11 +277,27 @@ have a copy of one file share the one.
                    out only comments, blank lines and wasted white space
   --help           show this help, and exit
   --version        show the version, and exit
-  --bundled        list the rocks bundled in smush, and exit
+  --bundled        list what smush is made from, and exit
 
 `smush barf --help` shows how to write a barf of files, and not a bundle.
 `smush crush --help` shows how to run a crush script, and not write a bundle.
 `smush standalone --help` shows how to write a standalone program.
+`smush bundled --help` shows how to write what a standalone program lists
+with `--bundled`.
+]]
+
+
+local BUNDLED_USAGE = [[
+Usage: smush bundled [NAME URL SUM]...
+
+Write the module smush.bundled of a standalone program, to standard output,
+for a redirection to put in a file that the program carries, as smush writes
+it into a bundle.  Its function showbundled writes the version of smush, and
+then the URL of each source that the program was fetched from, one to a line.
+Give a NAME, a URL and a SUM for each source, as the rows of the list that a
+bootstrap script fetches from have them: the NAME and the SUM are not written.
+
+  --help  show this help, and exit
 ]]
 
 
@@ -654,6 +676,36 @@ local function standalone_main(args, script)
 end
 
 
+-- Write the module `smush.bundled` of a standalone program, as a file, to
+-- standard output.  *args* are a NAME, a URL and a SUM for each source that
+-- the program was fetched from.
+local function bundled_main(args)
+   local words = {}
+   each(args, function(a)
+      if a == '--help' then
+         write(BUNDLED_USAGE)
+         exit(0)
+      elseif sub(a, 1, 1) == '-' then
+         stderr:write("smush bundled: unrecognized option '", a, "'\n",
+            BUNDLED_USAGE)
+         exit(1)
+      end
+      words[#words + 1] = a
+   end)
+   if #words % 3 ~= 0 then
+      stderr:write('smush bundled: give a NAME, a URL and a SUM for each source\n',
+         BUNDLED_USAGE)
+      exit(1)
+   end
+   local urls = {}
+   for i = 2, #words, 3 do
+      urls[#urls + 1] = words[i]
+   end
+   write('return{showbundled=function(write)(write or io.write)(',
+      format('%q', bundled_text('fetched', urls)), ')end}\n')
+end
+
+
 --- Write a single file that bundles *sources*.
 -- A source is a path, NAME=PATH, or the name of a module in the Lua path.
 -- With `--module=NAME` the file is a module that returns the bundled
@@ -672,6 +724,9 @@ local function main(args)
    end
    if args[1] == 'standalone' then
       return standalone_main({unpack(args, 2)}, args[0])
+   end
+   if args[1] == 'bundled' then
+      return bundled_main({unpack(args, 2)})
    end
    local script, entry, sources, known, externals = true, nil, {}, {}, {}
    local aliases = {}

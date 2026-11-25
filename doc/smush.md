@@ -57,6 +57,7 @@ standalone program is, and has no need of Lua or LuaRocks at all.
     smush barf [--compress] [--index] FILE... > files.barf
     smush crush [--first-run] SCRIPT
     smush standalone NAME PAYLOAD > FILE
+    smush bundled [NAME URL SUM]... > bundled.lua
 
 Smush writes to standard output.  The first two forms write a
 [bundle](#3-bundles).  The others are for [standalone
@@ -67,8 +68,10 @@ that a machine with a C compiler can run.
   * `--help` shows how to use smush, and exits;
   * `--version` shows which version of smush it is, and exits;
   * `--bundled` says which version of smush it is, and lists the rocks
-    bundled in it, one to a line, and exits (see
-    [What is Bundled](#36-what-is-bundled)).
+    bundled in it, or the sources that a standalone smush was fetched
+    from, one to a line, and exits (see
+    [What is Bundled](#36-what-is-bundled) and
+    [Smush as a Standalone Program](#46-smush-as-a-standalone-program)).
 
 An option that takes a value is written `--NAME=VALUE` or `--NAME VALUE`.
 Smush exits with an error for any option that it does not have.
@@ -223,7 +226,9 @@ Smush finds the rock of a module in the manifest of the LuaRocks tree that
 has its file, so it needs no LuaRocks itself.  A module that no rock has,
 such as a file of the project that is bundled, or a checkout in the Lua
 path, is not listed.  `showbundled` writes with `io.write`, or with a
-function that it is given: `showbundled(write)`.
+function that it is given: `showbundled(write)`.  A standalone program has
+no bundle, and lists the URLs it was fetched from instead (see [Making a
+Payload](#42-making-a-payload)).
 
 A program calls it from its own `--bundled` option, so that the help and
 the man page of the program have the option, and says that it is not
@@ -332,6 +337,21 @@ below it, in sorted order.  For example:
 reads `lib/smush/init.lua` and `other/lib/std/x/init.lua`, and stores them as
 `smush/init.lua` and `std/x/init.lua`.
 
+A program that lists what it is made from with `--bundled`, as a bundle does
+(see [What is Bundled](#36-what-is-bundled)), carries a module
+`smush.bundled`.  `smush bundled [NAME URL SUM]... > bundled.lua` writes it
+from the rows that a bootstrap script fetches from, which is why it takes a
+NAME and a SUM that it does not write.  Its `showbundled` writes the version
+of smush, and then the URL of each source, one to a line, after `fetched:`
+where a bundle has `bundled:`:
+
+    smush 0.5 fetched:
+    https://www.lua.org/ftp/lua-5.1.5.tar.gz
+    https://github.com/lua-stdlib/normalize/archive/refs/tags/v5.1.tar.gz
+
+Pack the file with the others, as `smush/bundled.lua`, so that the program
+finds it with `require 'smush.bundled'`.
+
 `smush crush --first-run SCRIPT > payload.barf` makes an empty `barfz` in the
 current directory, and runs the script, the bootstrap script.  What the script
 writes to its standard output goes to standard error.  Smush writes a
@@ -361,7 +381,8 @@ the std modules that smush needs, into a work directory in `$TMPDIR`, which it
 removes when it is done.  It moves the Lua sources into `barfz/`, and copies
 `host/main.c` and the build script there.  It packs the Lua files of smush
 and of the modules with `smush barf --index -C`, which gives them the paths
-that `require` looks for them by, and makes that into the C of `barfz/data.c`
+that `require` looks for them by, and a `smush/bundled.lua` that `smush
+bundled` writes for `--bundled`, and makes that into the C of `barfz/data.c`
 with `embed`.  The build script is one command, that compiles all of those
 with `$CC`.
 

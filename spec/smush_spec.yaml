@@ -608,3 +608,35 @@ specify smush:
       os.execute('rm -rf ' .. dir)
       expect(got.status).to_be(1)
       expect(got.errout).to_contain 'no host/stub.sh.in next to the bin directory'
+
+- describe bundled:
+  - before: |
+      dir = os.tmpname()
+      os.remove(dir)
+      assert(os.execute('mkdir -p ' .. dir .. '/smush'))
+      spit(dir .. '/smush/version.lua', "return {VERSION = '1.2'}\n")
+  - after: |
+      os.execute('rm -rf ' .. dir)
+
+  - it writes a module that lists the version of smush, and the URL of each source: |
+      local p = smush(dir, 'bundled', 'lua', 'https://x/lua.tar.gz', 'abc',
+                      'n', 'https://x/n.tar.gz', 'def')
+      expect(p.status).to_be(0)
+      expect(shown(p.output)).to_be 'smush 1.2 fetched:\nhttps://x/lua.tar.gz\nhttps://x/n.tar.gz\n'
+
+  - it lists only the version of smush, for no sources: |
+      expect(shown(smush(dir, 'bundled').output)).to_be 'smush 1.2 fetched:\n'
+
+  - it refuses a source that is not a NAME, a URL and a SUM, and an option it has not: |
+      local short = smush(dir, 'bundled', 'lua', 'https://x/lua.tar.gz')
+      local option = smush(dir, 'bundled', '--no-such')
+      expect(short.status).to_be(1)
+      expect(short.errout).to_contain 'give a NAME, a URL and a SUM'
+      expect(short.output).to_be ''
+      expect(option.status).to_be(1)
+      expect(option.errout).to_contain "unrecognized option '--no-such'"
+
+  - it shows how to use it with --help: |
+      local p = smush(dir, 'bundled', '--help')
+      expect(p.status).to_be(0)
+      expect(p.output).to_contain 'Usage: smush bundled'
