@@ -2,6 +2,9 @@
 
 ## Noteworthy changes in release ?.? (????-??-??) [?]
 
+
+## Noteworthy changes in release 0.5 (2026-11-24) [stable]
+
 ### New features
 
   - `smush --readable` keeps the lines and the indentation of the modules
