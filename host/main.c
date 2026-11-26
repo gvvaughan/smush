@@ -109,29 +109,27 @@ row_ok(lua_State *L, int row)
 static void
 read_index(lua_State *L)
 {
-    char *copy, *stop, *name, *data;
-    unsigned long length, size, start;
+    const char *stop, *name, *data;
+    unsigned long length, namelen, size, start;
     lua_Integer i, n;
     int index, map;
 
-    /* Reading an entry writes into it, but the data of the program is
-       not for writing, so read a copy that does not outlast this. */
-    copy = runtime_size < 25 ? NULL : malloc(runtime_size);
-    if (!copy)
+    /* The index is the first entry, and reading it writes nothing. */
+    if (runtime_size < 25)
         die("there is no payload");
-    memcpy(copy, runtime_data, runtime_size);
-    stop = copy + runtime_size - 16;
+    stop = (const char *) runtime_data + runtime_size - 16;
     if (barf_length(stop, &length) || length < 9 ||
         length > runtime_size - 16 ||
         memcmp(stop - length, "!<barfx>\n", 9))
         die("the payload is not an indexed barf");
-    if (barf_entry(stop - length + 9, stop, &name, &data, &size) ||
-        strcmp(name, "index"))
+    if (barf_entry(stop - length + 9, stop, &name, &namelen, &data, &size) ||
+        namelen != 5 || memcmp(name, "index", 5))
         die("the payload has no index");
 
-    start = (unsigned long) (data - copy) + size + 1;
+    start = (unsigned long) (data - (const char *) runtime_data) + size + 1;
     payload = runtime_data + start;
-    payload_size = (unsigned long) (stop - copy) - start;
+    payload_size = (unsigned long) (stop - (const char *) runtime_data) -
+        start;
 
     if (luaL_loadbuffer(L, data, size, "=index") ||
         lua_pcall(L, 0, 1, 0) || lua_type(L, -1) != LUA_TTABLE)
@@ -149,7 +147,6 @@ read_index(lua_State *L)
         lua_pop(L, 1);
     }
     lua_remove(L, index);
-    free(copy);
 }
 
 

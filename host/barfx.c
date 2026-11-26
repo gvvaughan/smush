@@ -59,9 +59,9 @@
  * strtoul, this accepts nothing before the digits, not even a sign.
  */
 static int
-digits(char **s, unsigned base, unsigned long *n)
+digits(const char **s, unsigned base, unsigned long *n)
 {
-    char *p = *s;
+    const char *p = *s;
     unsigned long v = 0;
     unsigned d;
 
@@ -96,11 +96,11 @@ number(const unsigned char *s)
  * a newline.  Return 0, or -1 if it is not that.
  */
 static int
-barf_length(char *tail, unsigned long *length)
+barf_length(const char *tail, unsigned long *length)
 {
-    char *p = tail;
+    const char *p = tail;
 
-    if (number((unsigned char *) tail) || tail[15] != '\n')
+    if (number((const unsigned char *) tail) || tail[15] != '\n')
         return -1;
     return digits(&p, 10, length) ? 0 : -1;
 }
@@ -108,26 +108,27 @@ barf_length(char *tail, unsigned long *length)
 
 /* Read the entry that starts at P, before STOP, the end of the barf: a
  * header SIZE PATH that ends with the first newline, then SIZE bytes of
- * data and a newline.  Point *NAME at the path, which now ends with a
- * NUL where the newline was, *DATA at the data, and set *SIZE.  Return
- * 0, or 1 if the header is bad, or 2 if the data is not all there.
+ * data and a newline.  Point *NAME at the path, which is *NAMELEN bytes
+ * and is not ended by a NUL, *DATA at the data, and set *SIZE.  Return
+ * 0, or 1 if the header is bad, or 2 if the data is not all there.  It
+ * reads the barf and never writes to it, so the barf can be constant.
  */
 static int
-barf_entry(char *p, char *stop, char **name, char **data,
-           unsigned long *size)
+barf_entry(const char *p, const char *stop, const char **name,
+           unsigned long *namelen, const char **data, unsigned long *size)
 {
-    char *nl, *e;
+    const char *nl, *e;
 
     if (!(nl = memchr(p, '\n', (size_t) (stop - p))) ||
         memchr(p, 0, (size_t) (nl - p)))
         return 1;
-    *nl = 0;
     *data = nl + 1;
 
     e = p;
     if (!digits(&e, 10, size) || *e != ' ')
         return 1;
     *name = e + 1;
+    *namelen = (unsigned long) (nl - *name);
 
     /* The data and its trailing newline must fit in the rest of the
        barf. */
@@ -262,10 +263,11 @@ int
 main(int argc, char **argv)
 {
     unsigned char *body = NULL;
-    char tail[16], *p, *stop, *name, *data;
+    char tail[16], *p, *stop, *name;
+    const char *entry_name, *data;
     FILE *in, *out;
     off_t end;
-    unsigned long size, length = 0, i;
+    unsigned long size, namelen, length = 0, i;
     int bad;
 
     if (argc != 2)
@@ -303,9 +305,14 @@ main(int argc, char **argv)
 
     /* Walk the entries, from after the magic line to the end. */
     for (p = (char *) body + 8, stop = (char *) body + length; p < stop;
-         p = data + size + 1) {
-        if ((bad = barf_entry(p, stop, &name, &data, &size)))
+         p += (data - p) + size + 1) {
+        if ((bad = barf_entry(p, stop, &entry_name, &namelen, &data, &size)))
             fatal(bad == 1 ? "bad header" : "bad entry");
+
+        /* The body is ours to write to, so end the path where the
+           header ended. */
+        name = p + (entry_name - p);
+        name[namelen] = 0;
         if (!path_ok(name))
             fatal("bad entry");
 
