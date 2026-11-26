@@ -12,5 +12,5 @@ lua_c=[
     ltablib ltm lundump lvm lzio
 ]
 
-run $CC $CFLAGS -DLUA_USE_POSIX -Ilua -o $OUT main.c data.c \
+$CC $CFLAGS -DLUA_USE_POSIX -Ilua -o $OUT main.c data.c \
     lua/$lua_c.c $LDFLAGS $LIBS

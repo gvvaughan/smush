@@ -57,7 +57,7 @@ jobs:
         run: |
           # The bootstrap needs the barf -C of this smush.
           export PATH="$PWD/bin:$PATH"
-          smush crush --first-run build-aux/standalone-5.1/bootstrap > payload.barf
+          smush crush -x --first-run build-aux/standalone-5.1/bootstrap > payload.barf
           smush standalone smush payload.barf > smush.sh
           chmod +x smush.sh
 
@@ -122,7 +122,7 @@ jobs:
       - name: make
         run: |
           export PATH="$PWD/bin:$PATH"
-          smush crush --first-run build-aux/standalone-${{ matrix.lua-version }}/bootstrap > payload.barf
+          smush crush -x --first-run build-aux/standalone-${{ matrix.lua-version }}/bootstrap > payload.barf
           smush standalone smush payload.barf > smush.sh
           chmod +x smush.sh
 
@@ -165,7 +165,7 @@ jobs:
       - name: unpack
         run: |
           export PATH="$PWD/bin:$PATH"
-          smush crush --first-run build-aux/standalone-5.1/bootstrap > payload.barf
+          smush crush -x --first-run build-aux/standalone-5.1/bootstrap > payload.barf
           cc -o barfx host/barfx.c
           mkdir payload
           (cd payload && ../barfx ../payload.barf)

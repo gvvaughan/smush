@@ -100,7 +100,7 @@ $CC -O1 $CPPFLAGS -o "$work/crush" "$work/src/crush.c" $LDFLAGS $LIBS ||
 
 (cd "$work/src" &&
    CC=$CC CFLAGS=$CFLAGS LDFLAGS=$LDFLAGS LIBS=$LIBS OUT="$work/@NAME@" \
-   "$work/crush" ./build >&2) ||
+   "$work/crush" -x ./build >&2) ||
    { trap - EXIT; die "the build failed, in $work/src"; }
 
 # Copy the program next to its final name and rename it into place, so

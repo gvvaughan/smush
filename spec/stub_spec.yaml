@@ -11,17 +11,20 @@ before: |
      return text
   end
 
-  -- A crush that runs its script with sh.  The stub only needs a program
+  -- A crush that runs its script with sh, and that is not run unless the
+  -- stub gives it -x to show the commands.  The stub only needs a program
   -- that runs `build`, so these examples need not wait for the real one
   -- to compile.
   local CRUSH_C = [[
+     #include <string.h>
      #include <unistd.h>
 
      int
      main(int argc, char **argv)
      {
-         (void) argc;
-         execl("/bin/sh", "sh", argv[1], (char *) 0);
+         if (argc != 3 || strcmp(argv[1], "-x"))
+             return 99;
+         execl("/bin/sh", "sh", argv[2], (char *) 0);
          return 127;
      }
   ]]

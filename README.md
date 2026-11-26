@@ -38,7 +38,7 @@ To make a standalone program, from a bootstrap script that gathers its
 sources and a build script that compiles them, which are written in the
 small build language that `smush crush` runs:
 
-    smush crush --first-run bootstrap > payload.barf
+    smush crush -x --first-run bootstrap > payload.barf
     smush standalone NAME payload.barf > FILE
     chmod +x FILE
 

@@ -22,7 +22,7 @@ the other lacks:
 | needs on the machine      | Lua                     | a shell and a C compiler      |
 | holds                     | Lua modules             | Lua modules, C, and a Lua     |
 | C modules                 | [external](#33-external-modules) | built in, if the program has them |
-| made by                   | `smush --main`          | `smush crush --first-run`, then `smush standalone` |
+| made by                   | `smush --main`          | `smush crush -x --first-run`, then `smush standalone` |
 | first run                 | starts at once          | builds, then starts           |
 
 A bundle is the way to ship a library or a tool to people who have Lua
@@ -77,7 +77,7 @@ standalone program supports direct installation like this.
     smush --main=NAME SOURCE... > program
     smush --module=NAME SOURCE... > module.lua
     smush barf [--compress] [--index] FILE... > files.barf
-    smush crush [--first-run] SCRIPT
+    smush crush [-x] [--first-run] SCRIPT
     smush standalone NAME PAYLOAD > FILE
     smush bundled [NAME URL SUM]... > bundled.lua
 
@@ -286,7 +286,7 @@ There are three steps:
      that runs it, and a bootstrap script, that gathers those sources on the
      machine of the author, are written in [crush](crush.md), a small
      language that a C compiler is all it takes to run;
-  2. `smush crush --first-run` runs the bootstrap script, and writes a
+  2. `smush crush -x --first-run` runs the bootstrap script, and writes a
      [payload](#42-making-a-payload), the files that it leaves behind, packed;
   3. `smush standalone` writes the [program](#43-assembling-the-program), as
      one file, from the payload.
@@ -306,13 +306,13 @@ script needs a `curl` or a `sha256sum` that a machine may not have:
     ]
 
     for name url sum in $dependencies {
-        run curl -fsSL -o $name.tar.gz $url
+        curl -fsSL -o $name.tar.gz $url
         sha256 -c $sum:$name.tar.gz
-        run mkdir $name
-        run tar -xzf $name.tar.gz -C $name --strip-components=1
+        mkdir $name
+        tar -xzf $name.tar.gz -C $name --strip-components=1
     }
 
-    run cc -O2 -o $OUT main.c lua/lapi.c lua/lauxlib.c
+    cc -O2 -o $OUT main.c lua/lapi.c lua/lauxlib.c
 
 [The crush manual](crush.md) describes all of it, and [Running a
 Script](crush.md#8-running-a-script) describes `smush crush`, which runs one in
@@ -355,12 +355,13 @@ where a bundle has `bundled:`:
 Pack the file with the others, as `smush/bundled.lua`, so that the program
 finds it with `require 'smush.bundled'`.
 
-`smush crush --first-run SCRIPT > payload.barf` makes an empty `barfz` in the
-current directory, and runs the script, the bootstrap script.  What the script
-writes to its standard output goes to standard error.  Smush writes a
+`smush crush -x --first-run SCRIPT > payload.barf` makes an empty `barfz` in
+the current directory, and runs the script, the bootstrap script.  What the
+script writes to its standard output goes to standard error.  Smush writes a
 compressed barf of the files that the script leaves below `barfz`, removes
 `barfz`, and exits with an error if the script fails, or if there is a `barfz`
-already, which it leaves as it is.
+already, which it leaves as it is.  With `-x` the log shows each command that
+the script runs, so run the bootstrap script with it to see it work.
 
 The bootstrap script is the author's, and runs where the author is, in the
 current directory, which holds the sources and whatever else it needs.  It is
@@ -392,7 +393,7 @@ with `$CC`.
 
 ### 4.3. Assembling the Program
 
-    smush crush --first-run build-aux/standalone-5.1/bootstrap > payload.barf
+    smush crush -x --first-run build-aux/standalone-5.1/bootstrap > payload.barf
     smush standalone smush payload.barf > smush-0.5.sh
     chmod +x smush-0.5.sh
 
@@ -414,8 +415,9 @@ The first time a standalone program runs, on a machine, it:
   1. compiles `barfx`, from the C in the file, and unpacks the payload with
      it into a directory of `$TMPDIR`;
   2. compiles `crush.c` from the payload;
-  3. runs `build` from the payload with crush, in the directory that the
-     payload was unpacked in, with these in the environment:
+  3. runs `build` from the payload with `crush -x`, so that the log shows
+     each command, in the directory that the payload was unpacked in, with
+     these in the environment:
 
      * `CC`, the C compiler, `cc` if unset;
      * `CFLAGS`, `-O2` if unset;

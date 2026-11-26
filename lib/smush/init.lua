@@ -257,7 +257,7 @@ local OPTIONS = {main = true, module = true, external = true}
 local USAGE = [[
 Usage: smush [OPTION]... SOURCE...
        smush barf [OPTION]... FILE...
-       smush crush [--first-run] SCRIPT
+       smush crush [-x] [--first-run] SCRIPT
        smush standalone NAME PAYLOAD
 
 Write a single file that bundles each SOURCE, to standard output.  A SOURCE
@@ -324,6 +324,8 @@ Run the crush script SCRIPT in the current directory, and exit with the
 status of crush.  Crush is built from host/crush.c once, and kept in
 $XDG_CACHE_HOME/smush, or ~/.cache/smush, for every later run.
 
+  -x           write each command to standard error before it runs, with
+               its words expanded, behind a "% "
   --first-run  make an empty directory barfz in the current directory
                before SCRIPT runs, and write a compressed barf of the
                files that it leaves below barfz to standard output, and
@@ -542,9 +544,12 @@ end
 -- remove it.
 local function crush_main(args, script)
    local first_run, name
+   local trace = ''
    each(args, function(a)
       if a == '--first-run' then
          first_run = true
+      elseif a == '-x' then
+         trace = '-x '
       elseif a == '--help' then
          write(CRUSH_USAGE)
          exit(0)
@@ -591,7 +596,7 @@ local function crush_main(args, script)
       stop 'cannot build crush'
    end
    if not first_run then
-      local ok, how, code = execute(format('%s %s', quoted(crush),
+      local ok, how, code = execute(format('%s %s%s', quoted(crush), trace,
                                            quoted(name)))
       finish()
       exit(exit_code(ok, how, code))
@@ -601,7 +606,7 @@ local function crush_main(args, script)
       stop 'cannot make barfz, which may be there already'
    end
    made_barfz = true
-   if not succeeded(execute(format('%s %s >&2', quoted(crush),
+   if not succeeded(execute(format('%s %s%s >&2', quoted(crush), trace,
                                    quoted(name)))) then
       stop('the script ' .. name .. ' failed')
    end

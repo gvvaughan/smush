@@ -48,9 +48,50 @@ specify crush:
     expect(out([[printf '%s' "$TMPDIR"]], 'TMPDIR= ')).to_be '/tmp'
     expect(out([[printf '%s' "$TMPDIR"]], 'TMPDIR=/var/tmp ')).to_be '/var/tmp'
 
-- it shows a command that run runs, with its words quoted: |
-    expect(out [[x=[a 'b c']; run printf '<%s>' $x '']]).
+- it shows each command with -x, quoted, with its env and its redirections: |
+    local function shown(script) return out(script, nil, '-x ') end
+    expect(shown [[x=[a 'b c']; printf '<%s>' $x '']]).
        to_be "% printf '<%s>' a 'b c' ''\n<a><b c><>"
+    expect(shown [[X=1 Y=[a b] printf a; true]]).
+       to_be "% X=1 Y='a b' printf a\na% true\n"
+    expect(shown [[X='a b' E= true]]).to_be "% X='a b' E='' true\n"
+    expect(shown [[printf a > f; cat f]]).
+       to_be '% printf a > f\n% cat f\na'
+    expect(shown [[d=f; printf a >> $d; cat f]]).
+       to_be '% printf a >> f\n% cat f\na'
+    expect(shown [[sh -c 'printf e >&2' 2> 'a b'; cat 'a b']]).
+       to_be "% sh -c 'printf e >&2' 2> 'a b'\n% cat 'a b'\ne"
+
+- it shows every command that runs with -x, expanded, and not an assignment: |
+    local text, status = crushed([[x=[a 'b c']; printf '<%s>' $x > f; cat f
+    X=1 echo $x
+    for n in 1 2 { true $n }
+    { false } || true]], nil, '-x ')
+    expect(status).to_be(0)
+    expect(text).to_be(table.concat {
+       "% printf '<%s>' a 'b c' > f\n",
+       "% cat f\n<a><b c>",
+       "% X=1 echo a 'b c'\na b c\n",
+       "% true 1\n% true 2\n",
+       "% false\n% true\n",
+    })
+    expect(select(2, crushed('x=1', nil, '-x '))).to_be(0)
+
+- it shows the builtins that it runs with -x: |
+    expect(out([[printf abc > f; sha256 f]], nil, '-x ')).to_be(
+       '% printf abc > f\n% sha256 f\n' ..
+       'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad  f\n')
+    expect(out('echo a b', nil, '-x ')).to_be '% echo a b\na b\n'
+    expect(out('cd /; pwd', nil, '-x ')).to_be '% cd /\n% pwd\n/\n'
+
+- it shows nothing without -x: |
+    expect(out [[X=1 echo a > f; cat f]]).to_be 'a\n'
+
+- it refuses an option other than -x: |
+    expect(select(2, crushed('true', nil, '-y '))).to_be(2)
+
+- it has no run command, which is a program that is not found: |
+    expect(select(2, crushed 'run true')).to_be(127)
 
 - it changes directory, and stops at exit: |
     expect(out "mkdir d; cd d; pwd; exit 4; printf no").to_match '/d\n$'

@@ -79,13 +79,14 @@ end
 -- `A=1 `, if given, and remove the directory.  Return what the script
 -- wrote to its standard output and error, and the exit status of
 -- crush.
-function crushed(script, env)
+function crushed(script, env, flags)
    local dir = io.popen('mktemp -d'):read '*l'
    local file = io.open(dir .. '/script', 'w')
    file:write(script)
    file:close()
-   local pipe = io.popen(('cd %s && %s%s ./script 2>&1; echo "status $?"'):
-                         format(dir, env or '', host_program 'crush'))
+   local pipe = io.popen(('cd %s && %s%s %s./script 2>&1; echo "status $?"'):
+                         format(dir, env or '', host_program 'crush',
+                                flags or ''))
    local output = pipe:read '*a'
    pipe:close()
    os.execute('rm -rf ' .. dir)

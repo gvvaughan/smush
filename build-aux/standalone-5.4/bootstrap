@@ -14,8 +14,8 @@ test -f lib/smush/version.lua || {
 # Everything that this script fetches and makes, except for barfz, is in
 # `work`.  An earlier run that failed may have left it, so start afresh.
 work="$TMPDIR/smush-bootstrap"
-run rm -rf $work
-run mkdir $work
+rm -rf $work
+mkdir $work
 
 # A name, where to fetch its release from, and the SHA-256 sum of that, for
 # each.  The name is the directory in `work` that the release is unpacked in.
@@ -35,18 +35,18 @@ dependencies=[
 ]
 
 for name url sum in $dependencies {
-    run curl -fsSL -o $work/$name.tar.gz $url || run wget -qO $work/$name.tar.gz $url
+    curl -fsSL -o $work/$name.tar.gz $url || wget -qO $work/$name.tar.gz $url
     sha256 -c $sum:$work/$name.tar.gz
-    run mkdir $work/$name
-    run tar -xzf $work/$name.tar.gz -C $work/$name --strip-components=1
+    mkdir $work/$name
+    tar -xzf $work/$name.tar.gz -C $work/$name --strip-components=1
 }
 
 # What the first run builds the program from: the Lua sources, without the
 # programs that are not part of the library.
-run mv $work/lua/src barfz/lua
-run rm -f barfz/lua/lua.c barfz/lua/luac.c barfz/lua/Makefile
-run cp host/crush.c host/barfx.c host/main.c barfz
-run cp build-aux/standalone-5.4/build barfz/build
+mv $work/lua/src barfz/lua
+rm -f barfz/lua/lua.c barfz/lua/luac.c barfz/lua/Makefile
+cp host/crush.c host/barfx.c host/main.c barfz
+cp build-aux/standalone-5.4/build barfz/build
 
 
 # The runtime: the Lua of smush and of the std modules it needs, under the
@@ -55,9 +55,9 @@ smush_lua=[barf c clexer host init lexer lz4 minify version]
 prototype_lua=[_base container contextmanager object scanner set]
 
 echo "os.exit(require 'smush'.main(arg))" > $work/main.lua
-run mkdir $work/smush
-run smush bundled $dependencies > $work/smush/bundled.lua
-run smush barf --index \
+mkdir $work/smush
+smush bundled $dependencies > $work/smush/bundled.lua
+smush barf --index \
     -C lib smush/$smush_lua.lua \
     -C $work/normalize/lib std/normalize/_core.lua std/normalize/init.lua \
     -C $work/functional/lib std/functional/_base.lua std/functional/init.lua \
@@ -69,4 +69,4 @@ run smush barf --index \
 # host/main.c uses as runtime_data and runtime_size.
 embed runtime $work/runtime.barf > barfz/data.c
 
-run rm -rf $work
+rm -rf $work

@@ -2,11 +2,12 @@
  * Smush the source, Luke!
  * Copyright (C) 2026 Gary V. Vaughan
  *
- * crush FILE
+ * crush [-x] FILE
  *
  * Runs a build script on a machine that has a C compiler and little
  * else.  The first run of a standalone program compiles it, and runs
- * the program's build script with it.
+ * the program's build script with it.  With -x, each command is written
+ * on stderr, with its words expanded and behind a "% ", before it runs.
  *
  * Syntax:
  *
@@ -49,18 +50,16 @@
  *     sha256 -c HASH:FILE...
  *                       check each FILE against its HASH, of 64 hex
  *                       digits, and write `FILE: OK` or `FILE: FAILED`
- *     run COMMAND...    write `% COMMAND...` on stderr, with the words
- *                       expanded, and then run COMMAND
  *
  * `{` and `}`, as words of their own, start and end a block of
  * statements, which has the status of the last one that ran, or of the
  * one that failed.  A block does not make a scope: what is set in it is
  * set after it.  A `}` ends a block after a command with a `;` or
- * without one, or on a line of its own: `{ run echo a; run echo b }`.
+ * without one, or on a line of its own: `{ echo a; echo b }`.
  *
  * `for NAME... in WORD... BLOCK` runs the block once for each NAME...
  * items of the expanded words, with each NAME set to the next item, in
- * order: `for f in a b { run echo $f }`.  A list that is written as
+ * order: `for f in a b { echo $f }`.  A list that is written as
  * rows is read a row at a time, as in `for file url sum in $rows {`,
  * and one that does not fill its last row is an error before the first
  * pass.  The names stay set after the loop, and a loop with no items
@@ -190,6 +189,7 @@ typedef struct {
 static const char *script_name = "crush", *text;
 static env *envs;
 static size_t nenvs;
+static int trace;  /* show every command that runs */
 static variable *vars;
 static size_t nvars;
 static int status;
@@ -1168,29 +1168,53 @@ echo(char **argv, size_t argc)
 }
 
 
-/* Write the words of ARGV after the first on stderr, behind a "% ", with
-   quotes around each word that needs them, so that the line can be
-   pasted into a shell. */
+/* Write the word W on stderr, in quotes if it needs them to be read back
+   as one word. */
 static void
-show(list argv)
+show_word(const char *w)
 {
-    size_t i;
-    const char *w;
+    if (!needs_quotes(w)) {
+        fputs(w, stderr);
+        return;
+    }
+    fputc('\'', stderr);
+    for (; *w; w++)
+        if (*w == '\'')
+            fputs("'\\''", stderr);
+        else
+            fputc(*w, stderr);
+    fputc('\'', stderr);
+}
+
+
+/* Write the command C on stderr behind a "% ", as the shell would be
+   given it: the assignments of its env, then the words of ARGV, and
+   then its redirections, so that the line can be pasted into a shell. */
+static void
+show(const statement *c, list argv)
+{
+    size_t i, j;
+    list target;
 
     fputs("%", stderr);
-    for (i = 1; i < argv.n; i++) {
+    for (i = 0; i < c->nassign; i++) {
+        fprintf(stderr, " %s=", c->assign[i].name);
+        show_word(envs[nenvs - c->nassign + i].value);
+    }
+    for (i = 0; i < argv.n; i++) {
         fputc(' ', stderr);
-        if (!needs_quotes(argv.item[i])) {
-            fputs(argv.item[i], stderr);
-            continue;
+        show_word(argv.item[i]);
+    }
+    for (i = 0; i < c->nredirect; i++) {
+        fputc(' ', stderr);
+        if (c->redirect[i].fd != 1)
+            fprintf(stderr, "%d", c->redirect[i].fd);
+        fputs(c->redirect[i].append ? ">>" : ">", stderr);
+        target = expand(&c->redirect[i].target, c->at);
+        for (j = 0; j < target.n; j++) {
+            fputc(' ', stderr);
+            show_word(target.item[j]);
         }
-        fputc('\'', stderr);
-        for (w = argv.item[i]; *w; w++)
-            if (*w == '\'')
-                fputs("'\\''", stderr);
-            else
-                fputc(*w, stderr);
-        fputc('\'', stderr);
     }
     fputc('\n', stderr);
 }
@@ -1270,12 +1294,8 @@ run(const statement *c)
 
     if (!argv.n)
         return 0;
-    if (!strcmp(argv.item[0], "run")) {
-        show(argv);
-        if (argv.n == 1)
-            return 0;
-        memmove(argv.item, argv.item + 1, --argv.n * sizeof *argv.item);
-    }
+    if (trace)
+        show(c, argv);
     if (!strcmp(argv.item[0], "cd")) {
         const char *dir = argv.n > 1 ? argv.item[1] : getenv("HOME");
         if (argv.n > 2 || !dir || chdir(dir)) {
@@ -1420,8 +1440,13 @@ main(int argc, char **argv)
     char *buf;
     long size = 0;
 
+    if (argc > 1 && !strcmp(argv[1], "-x")) {
+        trace = 1;
+        argc--;
+        argv++;
+    }
     if (argc != 2)
-        argfatal("usage: crush FILE");
+        argfatal("usage: crush [-x] FILE");
     script_name = argv[1];
     /* A script can rely on TMPDIR. */
     if (!getenv("TMPDIR") || !*getenv("TMPDIR"))

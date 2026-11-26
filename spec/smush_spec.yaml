@@ -425,6 +425,21 @@ specify smush:
       expect(status).to_be(0)
       expect(listing).to_be 'hello\n'
 
+  - it shows each command of the script with -x, and not without it: |
+      local dir = os.tmpname()
+      os.remove(dir)
+      assert(os.execute('mkdir ' .. dir))
+      spit(dir .. '/bootstrap', 'X=1 echo hello > barfz/x.txt\n')
+      local quiet = in_dir(dir, 'crush', '--first-run', 'bootstrap')
+      local loud = in_dir(dir, 'crush', '-x', '--first-run', 'bootstrap')
+      local plain = in_dir(dir, 'crush', '-x', 'bootstrap')
+      os.execute('rm -rf ' .. dir)
+      expect(quiet.errout).not_to_contain '% X=1 echo'
+      expect(loud.status).to_be(0)
+      expect(loud.errout).to_contain '% X=1 echo hello > barfz/x.txt\n'
+      expect(loud.output:sub(1, 9)).to_be '!<barfz>\n'
+      expect(plain.errout).to_contain '% X=1 echo hello > barfz/x.txt\n'
+
   - it makes barfz in the current directory, runs the bootstrap there, and removes barfz: |
       local dir = os.tmpname()
       os.remove(dir)

@@ -2,6 +2,20 @@
 
 ## Noteworthy changes in release ?.? (????-??-??) [?]
 
+### New features
+
+  - `smush crush -x SCRIPT` writes each command of the script to standard
+    error before it runs, with its words expanded, and its assignments
+    and its redirections, as `% X=1 embed name f > data.c`.  The build of
+    a standalone program is run with `-x`, so its log shows what it did.
+
+### Incompatible changes
+
+  - The crush builtin `run` is gone, as `-x` shows every command.  Take
+    `run` off the front of the commands of a script, and run it with
+    `smush crush -x`.  A `run` that is left is a program that is not
+    found, which ends the script with status 127.
+
 
 ## Noteworthy changes in release 0.5.1 (2026-11-25) [stable]
 

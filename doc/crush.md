@@ -25,7 +25,7 @@ starts a word begins a comment, which extends to the end of the line (`a#b`
 is one word). A backslash at the end of a line continues it:
 
     # Compile the program.
-    run cc -O2 -o $OUT main.c \
+    cc -O2 -o $OUT main.c \
         lua/lapi.c lua/lauxlib.c
 
 A line is either an assignment, which sets a local variable for the script, or
@@ -154,14 +154,14 @@ everything that runs in its scope.  There is no `<`, and no `2>&1`: use
 statement that has the status of the last command that ran in it, which may
 be the first command that failed!  A block is not a scope to variables, which
 are always global, and still set after the block ends.  The `;` to end a
-command right before `}` is optional, so `{ run echo a; run echo b }` is legal
+command right before `}` is optional, so `{ echo a; echo b }` is legal
 as one line.
 
 `for NAME... in WORD... BLOCK` runs the block once for each NAME of the items
 of the words, in order, with the names set to the next items.  With one name
 it is a loop over a list.  With several, the list is read a row at a time:
 
-    for f in a b c { run echo $f }
+    for f in a b c { echo $f }
 
     rows=[a 1 b 2]
     for n v in $rows { echo $n is $v }       # a is 1, then b is 2
@@ -197,10 +197,7 @@ another `}`.
     `FILE: OK` or `FILE: FAILED`.  It checks the rest after a file that fails,
     a file that it cannot read or a word that is not a HASH:FILE, and then
     fails, with status 1 with a count of the files that did not match.
-  * `run COMMAND...` writes `% COMMAND...` to standard error, with the words
-    expanded and quoted where they have blanks, and runs the program COMMAND,
-    so that a build log shows what it did.  It only starts a program from
-    `$PATH` and never a builtin, so `run cd` looks for a program called `cd`.
+
 
 ## 6. Status and Errors
 
@@ -229,7 +226,7 @@ or `$?`, and no `if`, `while`, `case` or functions.  A script that uses one is
 refused, with its line and column, before it runs.  Whatever else is needed, a
 script can synthesize from `sh -c`:
 
-    run sh -c 'cd lua && ls *.c | wc -l'
+    sh -c 'cd lua && ls *.c | wc -l'
 
 That is the shell of the machine, so a script that uses it depends on that
 machines shell, which is the entire purpose of using crush!  A build script
@@ -247,6 +244,20 @@ and exits with the status of crush.  Crush is built from `host/crush.c` with
 and for the system, so that no rerun builds it again, nor runs from a different
 `crush` that is on the path.  If that directory cannot be written, crush is
 built temporarily for each run.
+
+`smush crush -x SCRIPT` writes each command to standard error before it
+runs, behind a `% `, with its words expanded and quoted where they have blanks,
+and with the assignments before it and the redirections after it, so that the
+line can be pasted into a shell:
+
+    $ cat script
+    X=1 embed name f > data.c
+    $ smush crush -x script
+    % X=1 embed name f > data.c
+
+It writes every command, builtin or program, but not an assignment of a
+variable, nor a block or a `for`, only the commands inside them.  Run the
+bootstrap and build scripts of a program with `-x` to see them work.
 
 A script can rely on `$TMPDIR`, which is `/tmp` if the caller has
 none, for any temporary files that it makes and removes.
@@ -266,7 +277,7 @@ environment that the first-run script sets up:
         lstate lstring lstrlib ltable ltablib ltm lundump lvm lzio
     ]
 
-    run $CC $CFLAGS -DLUA_USE_POSIX -Ilua -o $OUT main.c data.c \
+    $CC $CFLAGS -DLUA_USE_POSIX -Ilua -o $OUT main.c data.c \
         lua/$lua_c.c $LDFLAGS $LIBS
 
 The `lua/$lua_c.c` makes `lua/lapi.c lua/lauxlib.c` and the rest, one word for
